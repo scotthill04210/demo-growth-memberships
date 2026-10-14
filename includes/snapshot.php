@@ -1046,19 +1046,37 @@ function dgm_apply_network_users( $path ) {
 		},
 		function ( $table, $row ) use ( $wpdb, $quoted ) {
 			if ( $table === $wpdb->users ) {
+				$user_id = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
+				$login   = isset( $row['user_login'] ) && is_string( $row['user_login'] ) ? $row['user_login'] : '';
+				if ( dgm_restore_preserves_user( $user_id, $login ) ) {
+					if ( $user_id > 0 ) {
+						$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$quoted} (user_id) VALUES (%d)", $user_id ) );
+					}
+					return true;
+				}
 				$saved = dgm_upsert_row( $wpdb->users, $row, 'ID' );
 				if ( is_wp_error( $saved ) ) {
 					return $saved;
 				}
-				if ( isset( $row['ID'] ) ) {
-					$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$quoted} (user_id) VALUES (%d)", (int) $row['ID'] ) );
-					$wpdb->delete( $wpdb->usermeta, array( 'user_id' => (int) $row['ID'], 'meta_key' => 'session_tokens' ) );
+				if ( $user_id > 0 ) {
+					$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$quoted} (user_id) VALUES (%d)", $user_id ) );
+					$wpdb->delete( $wpdb->usermeta, array( 'user_id' => $user_id, 'meta_key' => 'session_tokens' ) );
 				}
 				return true;
 			}
 			if ( $table === $wpdb->usermeta ) {
 				if ( isset( $row['meta_key'] ) && 'session_tokens' === $row['meta_key'] ) {
 					return true;
+				}
+				$owner_id = isset( $row['user_id'] ) ? (int) $row['user_id'] : 0;
+				if ( dgm_restore_preserves_user( $owner_id ) ) {
+					return true;
+				}
+				if ( isset( $row['umeta_id'] ) ) {
+					$current_owner = (int) $wpdb->get_var( $wpdb->prepare( "SELECT user_id FROM {$wpdb->usermeta} WHERE umeta_id = %d", (int) $row['umeta_id'] ) );
+					if ( $current_owner > 0 && dgm_restore_preserves_user( $current_owner ) ) {
+						return true;
+					}
 				}
 				return dgm_upsert_row( $wpdb->usermeta, $row, 'umeta_id' );
 			}
@@ -1102,7 +1120,7 @@ function dgm_remove_users_missing_from_snapshot( $ids_table ) {
 		foreach ( $ids as $user_id ) {
 			$user_id = (int) $user_id;
 			$last    = $user_id;
-			if ( is_super_admin( $user_id ) ) {
+			if ( dgm_restore_preserves_user( $user_id ) ) {
 				continue;
 			}
 			$like    = $wpdb->esc_like( $prefix ) . '%';

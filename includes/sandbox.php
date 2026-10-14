@@ -3,6 +3,7 @@
  * Limits for the demo sandbox.
  *
  * Visitors can add and edit content. Plugin, theme, user, and settings changes stay blocked.
+ * Administrator and super admin accounts are not limited.
  *
  * @package Demo_Growth_Memberships
  */
@@ -34,19 +35,24 @@ function dgm_register_sandbox_hooks() {
 /**
  * Whether this user is exempt from sandbox limits.
  *
- * @param int $user_id User ID. Zero means the current user.
+ * @param int          $user_id User ID. Zero means the current user.
+ * @param WP_User|null $user    User already loaded, so capability checks do not look the user up again.
  * @return bool
  */
-function dgm_sandbox_user_is_exempt( $user_id = 0 ) {
+function dgm_sandbox_user_is_exempt( $user_id = 0, $user = null ) {
 	if ( ! dgm_sandbox_is_active() ) {
 		return true;
+	}
+
+	if ( $user instanceof WP_User ) {
+		return dgm_user_is_privileged( $user );
 	}
 
 	if ( $user_id <= 0 ) {
 		$user_id = get_current_user_id();
 	}
 
-	return $user_id > 0 && is_super_admin( $user_id );
+	return dgm_user_is_privileged( $user_id );
 }
 
 /**
@@ -55,7 +61,7 @@ function dgm_sandbox_user_is_exempt( $user_id = 0 ) {
  * @return bool
  */
 function dgm_current_user_is_demo_role() {
-	if ( ! is_user_logged_in() || is_super_admin() ) {
+	if ( ! is_user_logged_in() || dgm_user_is_privileged() ) {
 		return false;
 	}
 
@@ -65,7 +71,7 @@ function dgm_current_user_is_demo_role() {
 }
 
 /**
- * Remove plugin, theme, and file capabilities from non-super-admins.
+ * Remove plugin, theme, and file capabilities from demo visitors.
  *
  * @param mixed    $allcaps Current caps.
  * @param mixed    $caps    Required caps.
@@ -79,8 +85,7 @@ function dgm_sandbox_limit_caps( $allcaps = array(), $caps = array(), $args = ar
 		return is_array( $allcaps ) ? $allcaps : array();
 	}
 
-	$user_id = ( $user instanceof WP_User ) ? (int) $user->ID : 0;
-	if ( dgm_sandbox_user_is_exempt( $user_id ) ) {
+	if ( dgm_sandbox_user_is_exempt( 0, $user ) ) {
 		return $allcaps;
 	}
 
@@ -128,7 +133,7 @@ function dgm_sandbox_map_meta_cap( $caps, $cap, $user_id, $args ) {
 }
 
 /**
- * Hide the administrator role from non-super-admins.
+ * Hide the administrator role from demo visitors.
  *
  * @param mixed $roles Editable roles.
  * @return array
@@ -144,7 +149,7 @@ function dgm_sandbox_editable_roles( $roles ) {
 }
 
 /**
- * Keep non-super-admins out of settings, plugin, and theme screens.
+ * Keep demo visitors out of settings, plugin, and theme screens.
  */
 function dgm_sandbox_block_screens() {
 	if ( dgm_sandbox_user_is_exempt() || ! is_admin() ) {
@@ -227,7 +232,7 @@ function dgm_sandbox_protect_demo_login( $data = array(), $update = false, $user
  * @return mixed
  */
 function dgm_sandbox_block_demo_password_reset( $allow = true, $user_id = 0 ) {
-	if ( ! dgm_sandbox_is_active() || is_super_admin() ) {
+	if ( ! dgm_sandbox_is_active() || dgm_user_is_privileged() ) {
 		return $allow;
 	}
 

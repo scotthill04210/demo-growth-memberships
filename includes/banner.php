@@ -243,7 +243,7 @@ function dgm_render_frontend_banner() {
  * Admin banner, including Network Admin.
  */
 function dgm_render_admin_banner() {
-	if ( ! dgm_should_show_banner() ) {
+	if ( ! dgm_should_show_banner() || dgm_user_is_privileged() ) {
 		return;
 	}
 

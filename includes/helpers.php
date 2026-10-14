@@ -55,6 +55,72 @@ function dgm_sandbox_is_active() {
 }
 
 /**
+ * Whether this account is an administrator or a network super admin.
+ *
+ * The democlient login is never treated as privileged. This does not call
+ * is_super_admin(), which checks capabilities and would recurse through user_has_cap.
+ *
+ * @param mixed $user User object, user ID, or null for the current user.
+ * @return bool
+ */
+function dgm_user_is_privileged( $user = null ) {
+	if ( is_numeric( $user ) ) {
+		$user_id = (int) $user;
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+		$user = get_userdata( $user_id );
+	}
+	if ( ! $user instanceof WP_User ) {
+		$user = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
+	}
+	if ( ! $user instanceof WP_User || ! $user->exists() || 'democlient' === $user->user_login ) {
+		return false;
+	}
+
+	if ( in_array( 'administrator', (array) $user->roles, true ) ) {
+		return true;
+	}
+
+	if ( is_multisite() && function_exists( 'get_super_admins' ) ) {
+		$supers = get_super_admins();
+		return is_array( $supers ) && in_array( $user->user_login, $supers, true );
+	}
+
+	return false;
+}
+
+/**
+ * Whether a restore must leave this account untouched.
+ *
+ * Administrators and super admins keep their current password, role, and profile.
+ *
+ * @param int    $user_id User ID.
+ * @param string $login   Login from a snapshot row, when available.
+ * @return bool
+ */
+function dgm_restore_preserves_user( $user_id, $login = '' ) {
+	if ( (int) $user_id > 0 && dgm_user_is_privileged( (int) $user_id ) ) {
+		return true;
+	}
+
+	if ( ! is_string( $login ) || '' === $login || 'democlient' === $login ) {
+		return false;
+	}
+
+	if ( is_multisite() && function_exists( 'get_super_admins' ) ) {
+		$supers = get_super_admins();
+		if ( is_array( $supers ) && in_array( $login, $supers, true ) ) {
+			return true;
+		}
+	}
+
+	$by_login = function_exists( 'get_user_by' ) ? get_user_by( 'login', $login ) : false;
+
+	return $by_login instanceof WP_User && dgm_user_is_privileged( $by_login );
+}
+
+/**
  * Demo password saved for the current site.
  *
  * @return string

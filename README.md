@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.0**.
+Current release: **1.1.1**.
 
 ## Setup
 
@@ -24,7 +24,7 @@ Turning demo mode off for a site restores email, orders, and the rest of the dem
 
 The demo is a sandbox. People logged in as `democlient` can add members, edit records, and submit forms. A saved database snapshot is restored every night at 3:00 AM America/Chicago so the day’s changes do not remain.
 
-Each site has its own snapshot under `wp-content/dgm-snapshots/<site-id>/`. The folder is not inside uploads. Open **Settings > Demo Growth Memberships** on that site (`manage_options`) to save a snapshot, restore it, turn on the nightly reset, and set failure alert emails. Nightly reset stays off until a snapshot exists. Sandbox limits start on and apply only while demo mode is on.
+Each site has its own snapshot under `wp-content/dgm-snapshots/<site-id>/`. The folder is not inside uploads. Open **Settings > Demo Growth Memberships** on that site (`manage_options`) to save a snapshot, restore it, turn on the nightly reset, and set failure alert emails. Nightly reset stays off until a snapshot exists. Sandbox limits start on and apply only while demo mode is on. Administrator and super admin accounts keep their normal dashboard, menus, and capabilities. The democlient account does not.
 
 The snapshot includes only that site’s tables, plus the network `users` and `usermeta` rows for people who have a role on that site. Transients, sessions, and this plugin’s `dgm_` options are left out, and a restore writes those options back so it cannot change the plugin’s own settings, schedule, or reset log.
 
@@ -119,6 +119,11 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.1
+
+- Leave Administrator and super admin accounts out of the sandbox, so turning on demo mode does not change their dashboard, menus, or capabilities.
+- A restore does not overwrite or remove those accounts. The `democlient` account stays sandboxed.
 
 ### 1.1.0
 
