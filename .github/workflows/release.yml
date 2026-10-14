@@ -1,0 +1,18 @@
+name: Release zip
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p build/demo-growth-memberships
+          rsync -a --exclude='.git' --exclude='.github' --exclude='.cursor' --exclude='build' --exclude='.gitignore' ./ build/demo-growth-memberships/
+          cd build && zip -r ../demo-growth-memberships.zip demo-growth-memberships
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" demo-growth-memberships.zip --clobber

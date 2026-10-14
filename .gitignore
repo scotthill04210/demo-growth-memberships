@@ -1,0 +1,5 @@
+/build/
+/demo-growth-memberships.zip
+.DS_Store
+Thumbs.db
+*.log
