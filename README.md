@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.0.1**.
+Current release: **1.1.0**.
 
 ## Setup
 
@@ -19,6 +19,69 @@ The demo password is saved for that site only. Leave the password field blank to
 The WordPress user `democlient` and the `client` role need to exist already. The plugin does not create them. The saved password should match that user’s password.
 
 Turning demo mode off for a site restores email, orders, and the rest of the demo behavior there. GitHub updates stay available from **Network Admin > Plugins**.
+
+## Snapshot and nightly reset
+
+The demo is a sandbox. People logged in as `democlient` can add members, edit records, and submit forms. A saved database snapshot is restored every night at 3:00 AM America/Chicago so the day’s changes do not remain.
+
+Each site has its own snapshot under `wp-content/dgm-snapshots/<site-id>/`. The folder is not inside uploads. Open **Settings > Demo Growth Memberships** on that site (`manage_options`) to save a snapshot, restore it, turn on the nightly reset, and set failure alert emails. Nightly reset stays off until a snapshot exists. Sandbox limits start on and apply only while demo mode is on.
+
+The snapshot includes only that site’s tables, plus the network `users` and `usermeta` rows for people who have a role on that site. Transients, sessions, and this plugin’s `dgm_` options are left out, and a restore writes those options back so it cannot change the plugin’s own settings, schedule, or reset log.
+
+### First snapshot
+
+1. Turn on demo mode for the site.
+2. Open **Settings > Demo Growth Memberships** on that site.
+3. Click **Save snapshot**. The page shows the snapshot date, size, and table count.
+4. Turn on **Nightly reset** and save. Add failure alert emails, one per line or separated by commas (up to 10).
+5. Click **Send test alert** and confirm each saved address.
+
+`DGM_ALERT_EMAIL` in `wp-config.php` is optional. One or more comma-separated addresses are always added to the saved list. If the list is still empty, the site admin email is used. Optional SMTP settings, used only for these alerts, are `DGM_SMTP_HOST`, `DGM_SMTP_PORT`, `DGM_SMTP_USER`, and `DGM_SMTP_PASS`.
+
+### Test a restore
+
+On a test site, with demo mode on and a snapshot saved:
+
+```bash
+wp dgm restore --url=https://demo.example.com --dry-run
+wp dgm restore --url=https://demo.example.com
+```
+
+`--dry-run` checks demo mode, the snapshot, the checksum, the table names, and free disk space, then exits without changing data. A real restore returns a non-zero status on failure.
+
+To test the failure path, copy `current.json`, the snapshot file, and its `.sha256` file out of `wp-content/dgm-snapshots/<site-id>/`. Change one byte of the snapshot copy. `wp dgm restore` then stops on the checksum and does not change tables. To exercise rollback, set the `.sha256` file and the `sha256` value in `current.json` to the new SHA-256 of the damaged file, then run the restore again. The load fails, the site is put back from the failsafe copy, and the plugin retries once after 5 minutes before emailing the alert list. Put the original files back afterward.
+
+### Cron
+
+On a server where you can edit crontab, this is the primary schedule. `CRON_TZ` keeps 3:00 AM on America/Chicago through daylight saving time:
+
+```cron
+CRON_TZ=America/Chicago
+0 3 * * * cd /path/to/wordpress && wp dgm restore --url=https://demo.example.com --scheduled
+0 9 * * * cd /path/to/wordpress && wp dgm watchdog --url=https://demo.example.com
+```
+
+`--scheduled` does nothing when nightly reset or demo mode is off, and exits 0. Without `--scheduled`, `wp dgm restore` always attempts a restore.
+
+WPMU DEV managed hosting does not let you edit crontab. Its servers run WP-CLI cron about every 5 minutes ([System Cron & Custom Cron Jobs](https://wpmudev.com/docs/using-wordpress/system-cron-custom-cron-jobs/)). While nightly reset is on, this plugin schedules the restore for 3:00 AM America/Chicago and the watchdog for 9:00 AM America/Chicago, so that existing cron runs them within about 5 minutes. An hourly fallback restores the site only if no restore has succeeded in the last 26 hours. Do not add a separate Hub cron URL.
+
+### Nginx
+
+Apache gets a deny-all `.htaccess` in the snapshot folder. Nginx ignores that file. Deny the folder in the server block:
+
+```nginx
+location ^~ /wp-content/dgm-snapshots/ {
+    deny all;
+}
+```
+
+### Uninstall
+
+Deleting the plugin removes its `dgm_` options and scheduled events. It leaves `wp-content/dgm-snapshots/` in place. Remove that directory yourself when you no longer need the snapshots:
+
+```bash
+rm -rf /path/to/wordpress/wp-content/dgm-snapshots
+```
 
 ## Updates
 
@@ -56,6 +119,12 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.0
+
+- Save a per-site database snapshot and restore it on demand or at 3:00 AM America/Chicago.
+- Keep a failsafe copy, roll back if a restore fails, and email the saved alert list.
+- Sandbox mode lets the demo client edit content while blocking plugins, themes, user changes, and other settings.
 
 ### 1.0.1
 

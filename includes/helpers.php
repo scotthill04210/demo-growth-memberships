@@ -21,6 +21,40 @@ function dgm_is_demo_mode() {
 }
 
 /**
+ * Whether the nightly restore is enabled for the current site.
+ *
+ * @return bool
+ */
+function dgm_nightly_reset_enabled() {
+	$value = get_option( 'dgm_nightly_reset', '0' );
+
+	return true === $value || 1 === $value || '1' === $value;
+}
+
+/**
+ * Whether sandbox limits are enabled for the current site.
+ *
+ * Sandbox mode defaults to on. Limits also require demo mode, so other
+ * sites in the network keep their normal capabilities.
+ *
+ * @return bool
+ */
+function dgm_is_sandbox_mode() {
+	$value = get_option( 'dgm_sandbox_mode', '1' );
+
+	return false !== $value && 0 !== $value && '0' !== $value && '' !== $value;
+}
+
+/**
+ * Whether sandbox limits should apply on this request.
+ *
+ * @return bool
+ */
+function dgm_sandbox_is_active() {
+	return dgm_is_demo_mode() && dgm_is_sandbox_mode();
+}
+
+/**
  * Demo password saved for the current site.
  *
  * @return string

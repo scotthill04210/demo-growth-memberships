@@ -17,6 +17,9 @@ function dgm_register_settings_hooks() {
 	add_filter( 'plugin_action_links_' . $basename, 'dgm_plugin_action_links' );
 	add_filter( 'network_admin_plugin_action_links_' . $basename, 'dgm_plugin_action_links' );
 	add_action( 'admin_init', 'dgm_handle_settings_save' );
+	add_action( 'admin_post_dgm_save_snapshot', 'dgm_handle_save_snapshot' );
+	add_action( 'admin_post_dgm_restore_now', 'dgm_handle_restore_now' );
+	add_action( 'admin_post_dgm_test_alert', 'dgm_handle_test_alert' );
 	add_action( 'network_admin_menu', 'dgm_register_network_settings_page' );
 	add_action( 'admin_menu', 'dgm_register_site_settings_page' );
 }
@@ -149,10 +152,36 @@ function dgm_save_current_site_settings() {
 	$mode_raw     = isset( $_POST['dgm_demo_mode'] ) ? wp_unslash( $_POST['dgm_demo_mode'] ) : '';
 	$password_raw = isset( $_POST['dgm_demo_password'] ) ? wp_unslash( $_POST['dgm_demo_password'] ) : '';
 	$clear_raw    = isset( $_POST['dgm_clear_password'] ) ? wp_unslash( $_POST['dgm_clear_password'] ) : '';
+	$nightly_raw  = isset( $_POST['dgm_nightly_reset'] ) ? wp_unslash( $_POST['dgm_nightly_reset'] ) : '';
+	$sandbox_raw  = isset( $_POST['dgm_sandbox_mode'] ) ? wp_unslash( $_POST['dgm_sandbox_mode'] ) : '';
+	$emails_raw   = isset( $_POST['dgm_alert_emails'] ) ? wp_unslash( $_POST['dgm_alert_emails'] ) : '';
 	$enabled      = is_string( $mode_raw ) && '1' === $mode_raw;
 	$clear        = is_string( $clear_raw ) && '1' === $clear_raw;
+	$nightly      = is_string( $nightly_raw ) && '1' === $nightly_raw;
+	$sandbox      = is_string( $sandbox_raw ) && '1' === $sandbox_raw;
 
 	dgm_update_site_settings( (int) get_current_blog_id(), $enabled, $password_raw, $clear );
+
+	if ( $nightly && ! dgm_snapshot_meta( (int) get_current_blog_id() ) ) {
+		$nightly = false;
+		dgm_flash_notice( 'error', __( 'Save a snapshot before turning on the nightly reset.', 'demo-growth-memberships' ) );
+	}
+	update_option( 'dgm_nightly_reset', $nightly ? '1' : '0', true );
+	update_option( 'dgm_sandbox_mode', $sandbox ? '1' : '0', true );
+
+	$parsed = dgm_parse_email_list( is_string( $emails_raw ) ? $emails_raw : '' );
+	$saved  = dgm_write_alert_recipients( (int) get_current_blog_id(), $parsed['valid'] );
+	if ( is_wp_error( $saved ) ) {
+		dgm_flash_notice( 'error', $saved->get_error_message() );
+	} elseif ( $parsed['invalid'] ) {
+		dgm_flash_notice( 'error', sprintf(
+			/* translators: %s: invalid email addresses. */
+			__( 'Some alert addresses were not saved: %s', 'demo-growth-memberships' ),
+			implode( ', ', $parsed['invalid'] )
+		) );
+	}
+
+	dgm_ensure_schedules();
 	dgm_redirect_after_settings_save( false );
 }
 
@@ -293,12 +322,16 @@ function dgm_render_site_settings_page() {
 		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'demo-growth-memberships' ) );
 	}
 
-	$demo_on       = dgm_is_demo_mode();
-	$has_password  = '' !== dgm_demo_password();
+	$demo_on      = dgm_is_demo_mode();
+	$has_password = '' !== dgm_demo_password();
+	$meta         = dgm_snapshot_meta( (int) get_current_blog_id() );
+	$emails       = get_option( 'dgm_alert_emails', array() );
+	$email_text   = is_array( $emails ) ? implode( "\n", $emails ) : '';
 
 	echo '<div class="wrap">';
 	echo '<h1>' . esc_html__( 'Demo Growth Memberships', 'demo-growth-memberships' ) . '</h1>';
 	dgm_render_settings_notice();
+	dgm_render_flash_notice();
 	echo '<p>' . esc_html__( 'These settings apply only to this site. Demo mode prefills the democlient login, blocks outgoing email, blocks orders and payments, shows the demo banner, and keeps democlient on the client role.', 'demo-growth-memberships' ) . '</p>';
 	echo '<form method="post" action="' . esc_url( admin_url( 'options-general.php?page=dgm-settings' ) ) . '">';
 	wp_nonce_field( 'dgm_save_site_settings' );
@@ -318,9 +351,59 @@ function dgm_render_site_settings_page() {
 	echo '</p>';
 	echo '<label><input type="checkbox" name="dgm_clear_password" value="1" /> ' . esc_html__( 'Remove the saved password', 'demo-growth-memberships' ) . '</label>';
 	echo '</td></tr>';
+	echo '<tr><th scope="row">' . esc_html__( 'Sandbox mode', 'demo-growth-memberships' ) . '</th><td>';
+	echo '<label><input type="checkbox" name="dgm_sandbox_mode" value="1" ' . checked( dgm_is_sandbox_mode(), true, false ) . ' /> ';
+	echo esc_html__( 'Let the demo client edit content, and block plugins, themes, user changes, and other settings', 'demo-growth-memberships' ) . '</label>';
+	echo '<p class="description">' . esc_html__( 'Sandbox limits apply only while demo mode is on. They start on.', 'demo-growth-memberships' ) . '</p></td></tr>';
+	echo '<tr><th scope="row">' . esc_html__( 'Nightly reset', 'demo-growth-memberships' ) . '</th><td>';
+	echo '<label><input type="checkbox" name="dgm_nightly_reset" value="1" ' . checked( dgm_nightly_reset_enabled(), true, false ) . disabled( ! $meta, true, false ) . ' /> ';
+	echo esc_html__( 'Restore the snapshot every night at 3:00 AM America/Chicago', 'demo-growth-memberships' ) . '</label>';
+	echo '<p class="description">' . esc_html__( 'This stays off until a snapshot exists.', 'demo-growth-memberships' ) . '</p></td></tr>';
+	echo '<tr><th scope="row"><label for="dgm-alert-emails">' . esc_html__( 'Failure alert emails', 'demo-growth-memberships' ) . '</label></th><td>';
+	echo '<textarea class="large-text" rows="5" id="dgm-alert-emails" name="dgm_alert_emails">' . esc_textarea( $email_text ) . '</textarea>';
+	echo '<p class="description">' . esc_html__( 'One address per line or separated by commas, up to 10. Invalid addresses are skipped. DGM_ALERT_EMAIL in wp-config.php is always added when an alert is sent.', 'demo-growth-memberships' ) . '</p></td></tr>';
 	echo '</tbody></table>';
 	submit_button();
-	echo '</form></div>';
+	echo '</form>';
+
+	echo '<h2>' . esc_html__( 'Snapshot', 'demo-growth-memberships' ) . '</h2>';
+	if ( $meta ) {
+		$when = isset( $meta['created'] ) ? wp_date( 'M j, Y g:i a', (int) $meta['created'] ) : '';
+		$size = isset( $meta['bytes'] ) && function_exists( 'size_format' ) ? size_format( (int) $meta['bytes'] ) : '';
+		echo '<p>' . esc_html( sprintf(
+			/* translators: 1: date, 2: file size, 3: number of tables. */
+			__( 'Snapshot from %1$s, %2$s, %3$d tables.', 'demo-growth-memberships' ),
+			$when,
+			$size,
+			isset( $meta['tables'] ) ? (int) $meta['tables'] : 0
+		) ) . '</p>';
+	} else {
+		echo '<p>' . esc_html__( 'No snapshot yet.', 'demo-growth-memberships' ) . '</p>';
+	}
+
+	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-right:8px">';
+	wp_nonce_field( 'dgm_save_snapshot' );
+	echo '<input type="hidden" name="action" value="dgm_save_snapshot" />';
+	submit_button( __( 'Save snapshot', 'demo-growth-memberships' ), 'secondary', 'submit', false );
+	echo '</form>';
+
+	$confirm = __( 'Restore this site from the snapshot? Changes since the snapshot will be replaced.', 'demo-growth-memberships' );
+	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block" onsubmit="return window.confirm(' . esc_attr( dgm_json_for_script( $confirm ) ) . ');">';
+	wp_nonce_field( 'dgm_restore_now' );
+	echo '<input type="hidden" name="action" value="dgm_restore_now" />';
+	submit_button( __( 'Restore now', 'demo-growth-memberships' ), 'delete', 'submit', false, $meta ? '' : 'disabled' );
+	echo '</form>';
+
+	echo '<h2>' . esc_html__( 'Test alert', 'demo-growth-memberships' ) . '</h2>';
+	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+	wp_nonce_field( 'dgm_test_alert' );
+	echo '<input type="hidden" name="action" value="dgm_test_alert" />';
+	echo '<p class="description">' . esc_html__( 'Sends to the saved list. Save the addresses above first.', 'demo-growth-memberships' ) . '</p>';
+	submit_button( __( 'Send test alert', 'demo-growth-memberships' ), 'secondary', 'submit', false );
+	echo '</form>';
+
+	dgm_render_reset_log();
+	echo '</div>';
 }
 
 /**
@@ -432,4 +515,154 @@ function dgm_network_settings_rows() {
 	}
 
 	return $rows;
+}
+
+/**
+ * Store a one-time admin message for the current user.
+ *
+ * @param string $type    success|error.
+ * @param string $message Message.
+ */
+function dgm_flash_notice( $type, $message ) {
+	$key      = 'dgm_flash_' . get_current_user_id();
+	$existing = get_transient( $key );
+	if ( is_array( $existing ) && ! empty( $existing['message'] ) && is_string( $existing['message'] ) ) {
+		$message = $existing['message'] . ' ' . $message;
+		if ( isset( $existing['type'] ) && 'error' === $existing['type'] ) {
+			$type = 'error';
+		}
+	}
+
+	set_transient(
+		$key,
+		array(
+			'type'    => 'error' === $type ? 'error' : 'success',
+			'message' => (string) $message,
+		),
+		MINUTE_IN_SECONDS
+	);
+}
+
+/**
+ * Print and clear the one-time admin message.
+ */
+function dgm_render_flash_notice() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	$key   = 'dgm_flash_' . get_current_user_id();
+	$flash = get_transient( $key );
+	if ( ! is_array( $flash ) || empty( $flash['message'] ) || ! is_string( $flash['message'] ) ) {
+		return;
+	}
+
+	delete_transient( $key );
+	$class = isset( $flash['type'] ) && 'error' === $flash['type'] ? 'notice-error' : 'notice-success';
+	echo '<div class="notice ' . esc_attr( $class ) . '"><p>' . esc_html( $flash['message'] ) . '</p></div>';
+}
+
+/**
+ * Save a snapshot from the settings screen.
+ */
+function dgm_handle_save_snapshot() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'demo-growth-memberships' ), '', array( 'response' => 403 ) );
+	}
+
+	check_admin_referer( 'dgm_save_snapshot' );
+	$result = dgm_create_snapshot();
+	if ( is_wp_error( $result ) ) {
+		dgm_flash_notice( 'error', $result->get_error_message() );
+	} else {
+		dgm_flash_notice( 'success', __( 'Snapshot saved.', 'demo-growth-memberships' ) );
+	}
+
+	dgm_redirect_after_settings_save( false );
+}
+
+/**
+ * Restore the current site from the settings screen.
+ */
+function dgm_handle_restore_now() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'demo-growth-memberships' ), '', array( 'response' => 403 ) );
+	}
+
+	check_admin_referer( 'dgm_restore_now' );
+	$result = dgm_restore_site( array( 'manual' => true ) );
+	if ( is_wp_error( $result ) ) {
+		dgm_flash_notice( 'error', $result->get_error_message() );
+	} else {
+		dgm_flash_notice( 'success', __( 'Restore finished.', 'demo-growth-memberships' ) );
+	}
+
+	dgm_redirect_after_settings_save( false );
+}
+
+/**
+ * Send a test alert from the settings screen.
+ */
+function dgm_handle_test_alert() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'demo-growth-memberships' ), '', array( 'response' => 403 ) );
+	}
+
+	check_admin_referer( 'dgm_test_alert' );
+	$result = dgm_send_test_alert();
+	if ( is_wp_error( $result ) ) {
+		dgm_flash_notice( 'error', $result->get_error_message() );
+		dgm_redirect_after_settings_save( false );
+	}
+
+	$lines = array();
+	foreach ( $result['results'] as $row ) {
+		if ( empty( $row['email'] ) ) {
+			$lines[] = $row['error'];
+			continue;
+		}
+		$lines[] = $row['email'] . ': ' . ( ! empty( $row['ok'] ) ? __( 'sent', 'demo-growth-memberships' ) : __( 'failed', 'demo-growth-memberships' ) );
+	}
+
+	dgm_flash_notice( ! empty( $result['ok'] ) ? 'success' : 'error', implode( ' ', $lines ) );
+	dgm_redirect_after_settings_save( false );
+}
+
+/**
+ * Last 10 resets for this site.
+ */
+function dgm_render_reset_log() {
+	$log = get_option( 'dgm_reset_log', array() );
+	echo '<h2>' . esc_html__( 'Recent resets', 'demo-growth-memberships' ) . '</h2>';
+	if ( ! is_array( $log ) || ! $log ) {
+		echo '<p>' . esc_html__( 'No resets yet.', 'demo-growth-memberships' ) . '</p>';
+		return;
+	}
+
+	echo '<table class="widefat striped"><thead><tr>';
+	echo '<th scope="col">' . esc_html__( 'Time', 'demo-growth-memberships' ) . '</th>';
+	echo '<th scope="col">' . esc_html__( 'Duration', 'demo-growth-memberships' ) . '</th>';
+	echo '<th scope="col">' . esc_html__( 'Result', 'demo-growth-memberships' ) . '</th>';
+	echo '<th scope="col">' . esc_html__( 'Error', 'demo-growth-memberships' ) . '</th>';
+	echo '</tr></thead><tbody>';
+	foreach ( array_slice( $log, 0, 10 ) as $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		$time   = isset( $row['time'] ) ? wp_date( 'M j, Y g:i a', (int) $row['time'] ) : '';
+		$ok     = isset( $row['result'] ) && 'success' === $row['result'];
+		$result = $ok ? __( 'Success', 'demo-growth-memberships' ) : __( 'Failure', 'demo-growth-memberships' );
+		if ( $ok && ! empty( $row['files'] ) ) {
+			$result .= ' ' . sprintf(
+				/* translators: %d: number of files. */
+				__( '(%d files removed)', 'demo-growth-memberships' ),
+				(int) $row['files']
+			);
+		}
+		echo '<tr><td>' . esc_html( $time ) . '</td>';
+		echo '<td>' . esc_html( isset( $row['duration'] ) ? (string) $row['duration'] . 's' : '' ) . '</td>';
+		echo '<td>' . esc_html( $result ) . '</td>';
+		echo '<td>' . esc_html( isset( $row['error'] ) && is_string( $row['error'] ) ? $row['error'] : '' ) . '</td></tr>';
+	}
+	echo '</tbody></table>';
 }

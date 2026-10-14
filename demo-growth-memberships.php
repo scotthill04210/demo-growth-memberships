@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Demo Growth Memberships
  * Plugin URI: https://github.com/scotthill04210/demo-growth-memberships
- * Description: Demo mode for a multisite membership site. Prefills a demo login, blocks outgoing email, and blocks orders and payments.
- * Version: 1.0.1
+ * Description: Demo mode for a multisite membership site. Prefills a demo login, blocks outgoing email and orders, and can restore a per-site snapshot every night.
+ * Version: 1.1.0
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
@@ -46,6 +46,13 @@ require_once DGM_PLUGIN_DIR . 'includes/orders.php';
 require_once DGM_PLUGIN_DIR . 'includes/banner.php';
 require_once DGM_PLUGIN_DIR . 'includes/roles.php';
 require_once DGM_PLUGIN_DIR . 'includes/updates.php';
+require_once DGM_PLUGIN_DIR . 'includes/snapshot-store.php';
+require_once DGM_PLUGIN_DIR . 'includes/alerts.php';
+require_once DGM_PLUGIN_DIR . 'includes/maintenance.php';
+require_once DGM_PLUGIN_DIR . 'includes/sandbox.php';
+require_once DGM_PLUGIN_DIR . 'includes/snapshot.php';
+require_once DGM_PLUGIN_DIR . 'includes/schedule.php';
+require_once DGM_PLUGIN_DIR . 'includes/cli.php';
 require_once DGM_PLUGIN_DIR . 'includes/settings.php';
 
 /**
@@ -60,6 +67,10 @@ function dgm_boot() {
 	dgm_register_order_hooks();
 	dgm_register_banner_hooks();
 	dgm_register_role_hooks();
+	dgm_register_maintenance_hooks();
+	dgm_register_sandbox_hooks();
+	dgm_register_schedule_hooks();
+	dgm_register_cli();
 }
 
 dgm_boot();
