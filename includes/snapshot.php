@@ -22,7 +22,16 @@ function dgm_create_snapshot( $args = array() ) {
 	global $wpdb;
 
 	$args     = is_array( $args ) ? $args : array();
+	$budget   = isset( $args['budget'] ) ? (int) $args['budget'] : 0;
 	$failsafe = ! empty( $args['failsafe'] );
+	if ( $budget > 0 && ! $failsafe ) {
+		$GLOBALS['dgm_snapshot_deadline'] = microtime( true ) + max( 8, $budget );
+		$result = dgm_create_snapshot_step();
+		unset( $GLOBALS['dgm_snapshot_deadline'] );
+
+		return $result;
+	}
+	unset( $GLOBALS['dgm_snapshot_deadline'] );
 	$blog_id  = (int) get_current_blog_id();
 
 	if ( ! dgm_is_demo_mode() ) {
@@ -101,6 +110,222 @@ function dgm_create_snapshot( $args = array() ) {
 }
 
 /**
+ * In-progress web snapshot, if one was updated in the last 15 minutes.
+ *
+ * @param int $blog_id Site ID.
+ * @return array|null
+ */
+function dgm_snapshot_build_state( $blog_id ) {
+	$state = dgm_read_json_file( dgm_snapshot_dir( (int) $blog_id ) . '/building.json' );
+	if ( ! is_array( $state ) || empty( $state['file'] ) || empty( $state['tables'] ) || ! is_array( $state['tables'] ) ) {
+		return null;
+	}
+	if ( empty( $state['updated'] ) || ( time() - (int) $state['updated'] ) > 15 * MINUTE_IN_SECONDS ) {
+		return null;
+	}
+
+	return $state;
+}
+
+/**
+ * Save part of a snapshot, then stop so the browser request can finish.
+ *
+ * The finished snapshot replaces current.json only after every table is written.
+ *
+ * @return array|WP_Error Manifest, or a pending progress array.
+ */
+function dgm_create_snapshot_step() {
+	global $wpdb;
+
+	$blog_id = (int) get_current_blog_id();
+	if ( ! dgm_is_demo_mode() ) {
+		return new WP_Error( 'dgm_demo_mode', __( 'Demo mode is off for this site.', 'demo-growth-memberships' ) );
+	}
+
+	$ready = dgm_ensure_snapshot_dir( $blog_id );
+	if ( is_wp_error( $ready ) ) {
+		return $ready;
+	}
+
+	dgm_raise_restore_limits();
+	$dir        = dgm_snapshot_dir( $blog_id );
+	$state_path = $dir . '/building.json';
+	$state      = dgm_read_json_file( $state_path );
+	$fresh      = ! is_array( $state ) || empty( $state['updated'] ) || ( time() - (int) $state['updated'] ) > 15 * MINUTE_IN_SECONDS;
+	if ( $fresh && is_array( $state ) && ! empty( $state['file'] ) && is_string( $state['file'] ) ) {
+		$old = $dir . '/' . $state['file'];
+		if ( is_file( $old ) ) {
+			unlink( $old );
+		}
+		$state = null;
+	}
+
+	if ( ! is_array( $state ) ) {
+		$tables = array();
+		foreach ( dgm_tables_to_dump() as $table => $scope ) {
+			$tables[] = array(
+				'name'  => $table,
+				'scope' => $scope,
+			);
+		}
+		if ( ! $tables ) {
+			return new WP_Error( 'dgm_snapshot', __( 'No tables were found to snapshot.', 'demo-growth-memberships' ) );
+		}
+		$state = array(
+			'file'     => 'snap-' . bin2hex( random_bytes( 16 ) ) . '.dgm',
+			'created'  => time(),
+			'blog_id'  => $blog_id,
+			'prefix'   => $wpdb->get_blog_prefix(),
+			'tables'   => $tables,
+			'index'    => 0,
+			'bytes'    => 0,
+			'partial'  => null,
+			'header'   => false,
+			'checksum' => false,
+			'updated'  => time(),
+		);
+		dgm_progress( 'Saving a snapshot.' );
+	}
+
+	if ( empty( $state['file'] ) || ! is_string( $state['file'] ) || ! dgm_snapshot_basename_ok( $state['file'], 'current' ) || (int) $state['blog_id'] !== $blog_id ) {
+		if ( is_file( $state_path ) ) {
+			unlink( $state_path );
+		}
+		return new WP_Error( 'dgm_snapshot', __( 'The snapshot in progress is not valid. Save the snapshot again.', 'demo-growth-memberships' ) );
+	}
+
+	$path   = $dir . '/' . $state['file'];
+	$tables = $state['tables'];
+	$total  = count( $tables );
+	$index  = (int) $state['index'];
+
+	if ( empty( $state['checksum'] ) ) {
+		if ( empty( $state['header'] ) || ! is_file( $path ) ) {
+			$handle = fopen( $path, 'wb' );
+			if ( false === $handle ) {
+				return new WP_Error( 'dgm_snapshot', __( 'Could not write the snapshot file.', 'demo-growth-memberships' ) );
+			}
+			fwrite( $handle, "DGM1\n" );
+			fwrite( $handle, 'blog ' . $blog_id . "\n" );
+			fwrite( $handle, 'prefix ' . $state['prefix'] . "\n" );
+			fwrite( $handle, 'created ' . (int) $state['created'] . "\n" );
+			$state['header'] = true;
+			$state['bytes']  = (int) ftell( $handle );
+		} else {
+			$handle = fopen( $path, 'r+b' );
+			if ( false === $handle ) {
+				return new WP_Error( 'dgm_snapshot', __( 'Could not write the snapshot file.', 'demo-growth-memberships' ) );
+			}
+			$bytes = (int) $state['bytes'];
+			if ( ! ftruncate( $handle, $bytes ) ) {
+				fclose( $handle );
+				return new WP_Error( 'dgm_snapshot', __( 'Could not resume the snapshot file.', 'demo-growth-memberships' ) );
+			}
+			fseek( $handle, $bytes );
+		}
+
+		while ( $index < $total ) {
+			$table  = isset( $tables[ $index ]['name'] ) ? $tables[ $index ]['name'] : '';
+			$scope  = isset( $tables[ $index ]['scope'] ) ? $tables[ $index ]['scope'] : '';
+			$resume = is_array( $state['partial'] ) && isset( $state['partial']['table'] ) && $state['partial']['table'] === $table ? $state['partial'] : null;
+			if ( ! is_string( $table ) || '' === $table ) {
+				fclose( $handle );
+				return new WP_Error( 'dgm_snapshot', __( 'The snapshot in progress is not valid.', 'demo-growth-memberships' ) );
+			}
+			dgm_progress( 'Dumping ' . $table . '.' );
+			$dumped = dgm_dump_one_table( $handle, $table, $scope, $resume );
+			if ( is_wp_error( $dumped ) ) {
+				fclose( $handle );
+				unlink( $path );
+				if ( is_file( $state_path ) ) {
+					unlink( $state_path );
+				}
+				return $dumped;
+			}
+			fflush( $handle );
+			$state['bytes']   = (int) ftell( $handle );
+			$state['updated'] = time();
+			if ( is_array( $dumped ) && ! empty( $dumped['pending'] ) ) {
+				$dumped['table']   = $table;
+				$state['partial']  = $dumped;
+				$state['index']    = $index;
+				fclose( $handle );
+				dgm_write_json_file( $state_path, $state );
+				return array(
+					'pending' => true,
+					'done'    => $index,
+					'total'   => $total,
+				);
+			}
+			$state['partial'] = null;
+			++$index;
+			$state['index'] = $index;
+			dgm_write_json_file( $state_path, $state );
+			if ( dgm_snapshot_should_pause() && $index < $total ) {
+				fclose( $handle );
+				return array(
+					'pending' => true,
+					'done'    => $index,
+					'total'   => $total,
+				);
+			}
+		}
+
+		fwrite( $handle, "done\n" );
+		fflush( $handle );
+		$state['bytes']    = (int) ftell( $handle );
+		$state['checksum'] = true;
+		$state['updated']  = time();
+		fclose( $handle );
+		if ( dgm_snapshot_should_pause() ) {
+			dgm_write_json_file( $state_path, $state );
+			return array(
+				'pending' => true,
+				'done'    => $total,
+				'total'   => $total,
+			);
+		}
+	}
+
+	$hash = dgm_write_checksum( $path );
+	if ( is_wp_error( $hash ) ) {
+		unlink( $path );
+		if ( is_file( $state_path ) ) {
+			unlink( $state_path );
+		}
+		return $hash;
+	}
+	$verified = dgm_verify_file_checksum( $path, $path . '.sha256', $hash );
+	if ( is_wp_error( $verified ) ) {
+		unlink( $path );
+		if ( is_file( $state_path ) ) {
+			unlink( $state_path );
+		}
+		return $verified;
+	}
+
+	$meta = array(
+		'file'    => $state['file'],
+		'sha256'  => $hash,
+		'created' => (int) $state['created'],
+		'bytes'   => (int) filesize( $path ),
+		'tables'  => $total,
+		'blog_id' => $blog_id,
+		'prefix'  => $state['prefix'],
+	);
+	if ( ! dgm_write_json_file( $dir . '/current.json', $meta ) ) {
+		return new WP_Error( 'dgm_snapshot', __( 'Could not save the snapshot manifest.', 'demo-growth-memberships' ) );
+	}
+	if ( is_file( $state_path ) ) {
+		unlink( $state_path );
+	}
+	dgm_cleanup_orphan_snapshots( $blog_id );
+	dgm_progress( 'Snapshot saved. ' . $total . ' tables.' );
+
+	return $meta;
+}
+
+/**
  * Restore this site from the current snapshot, or report what would happen.
  *
  * @param array $args manual, scheduled, retry, dry_run.
@@ -114,7 +339,8 @@ function dgm_restore_site( $args = array() ) {
 	$scheduled = ! empty( $args['scheduled'] );
 	$manual    = ! empty( $args['manual'] );
 
-	if ( $scheduled && ! $retry && ! $manual ) {
+	$override = ! empty( $args['override'] ) || $manual;
+	if ( $scheduled && ! $retry && ! $override ) {
 		if ( ! dgm_nightly_reset_enabled() ) {
 			dgm_progress( 'Nightly reset is off.' );
 			return true;
@@ -399,8 +625,8 @@ function dgm_tables_to_dump() {
  * @param string   $scope  site|network.
  * @return true|WP_Error
  */
-function dgm_dump_one_table( $handle, $table, $scope ) {
-	if ( 'site' === $scope && ! dgm_table_needs_row_filter( $table ) && dgm_mysqldump_available() ) {
+function dgm_dump_one_table( $handle, $table, $scope, $resume = null ) {
+	if ( empty( $GLOBALS['dgm_snapshot_deadline'] ) && 'site' === $scope && ! dgm_table_needs_row_filter( $table ) && dgm_mysqldump_available() ) {
 		$dumped = dgm_dump_table_mysqldump( $handle, $table );
 		if ( ! is_wp_error( $dumped ) ) {
 			return true;
@@ -409,10 +635,19 @@ function dgm_dump_one_table( $handle, $table, $scope ) {
 	}
 
 	if ( dgm_table_needs_row_filter( $table ) && 'network' === $scope ) {
-		return dgm_dump_network_table( $handle, $table );
+		return dgm_dump_network_table( $handle, $table, $resume );
 	}
 
-	return dgm_dump_table_php( $handle, $table );
+	return dgm_dump_table_php( $handle, $table, $resume );
+}
+
+/**
+ * Whether this web snapshot should pause after the current chunk.
+ *
+ * @return bool
+ */
+function dgm_snapshot_should_pause() {
+	return ! empty( $GLOBALS['dgm_snapshot_deadline'] ) && microtime( true ) >= (float) $GLOBALS['dgm_snapshot_deadline'];
 }
 
 /**
@@ -431,13 +666,15 @@ function dgm_table_needs_row_filter( $table ) {
  * Dump a site table in chunks.
  *
  * @param resource $handle File handle.
- * @param string   $table  Table name.
- * @return true|WP_Error
+ * @param string     $table  Table name.
+ * @param array|null $resume Partial progress for a paused web snapshot.
+ * @return true|array|WP_Error
  */
-function dgm_dump_table_php( $handle, $table ) {
+function dgm_dump_table_php( $handle, $table, $resume = null ) {
 	global $wpdb;
 
-	$create = dgm_show_create_table( $table );
+	$resumed = is_array( $resume ) && ! empty( $resume['header'] );
+	$create  = $resumed ? '' : dgm_show_create_table( $table );
 	if ( is_wp_error( $create ) ) {
 		return $create;
 	}
@@ -453,30 +690,33 @@ function dgm_dump_table_php( $handle, $table ) {
 	}
 
 	$quoted = dgm_quote_identifier( $table );
-	$count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$quoted}{$where}" );
+	$count  = $resumed ? (int) $resume['count'] : (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$quoted}{$where}" );
 	$error  = dgm_db_error();
 	if ( is_wp_error( $error ) ) {
 		return $error;
 	}
 
-	fwrite( $handle, 'table ' . $table . " php\n" );
-	fwrite( $handle, 'create ' . base64_encode( $create ) . "\n" );
-	fwrite( $handle, 'count ' . $count . "\n" );
+	if ( ! $resumed ) {
+		fwrite( $handle, 'table ' . $table . " php\n" );
+		fwrite( $handle, 'create ' . base64_encode( $create ) . "\n" );
+		fwrite( $handle, 'count ' . $count . "\n" );
+	}
 
-	$written = 0;
+	$written = $resumed ? (int) $resume['written'] : 0;
 	$pk      = dgm_table_primary_key( $table );
 	$pk_sql  = dgm_quote_identifier( $pk );
-	$last    = 0;
-	$offset  = 0;
+	$last    = $resumed ? (int) $resume['last'] : 0;
+	$offset  = $resumed ? (int) $resume['offset'] : 0;
+	$limit   = empty( $GLOBALS['dgm_snapshot_deadline'] ) ? 200 : 50;
 	do {
 		if ( '' !== $pk_sql ) {
 			$clause = '' === $where ? 'WHERE' : 'AND';
 			$last   = (int) $last;
-			$rows   = $wpdb->get_results( "SELECT * FROM {$quoted}{$where} {$clause} {$pk_sql} > {$last} ORDER BY {$pk_sql} ASC LIMIT 200", ARRAY_A );
+			$rows   = $wpdb->get_results( "SELECT * FROM {$quoted}{$where} {$clause} {$pk_sql} > {$last} ORDER BY {$pk_sql} ASC LIMIT " . (int) $limit, ARRAY_A );
 		} else {
 			$offset = (int) $offset;
-			$rows   = $wpdb->get_results( "SELECT * FROM {$quoted}{$where} LIMIT 200 OFFSET {$offset}", ARRAY_A );
-			$offset += 200;
+			$rows   = $wpdb->get_results( "SELECT * FROM {$quoted}{$where} LIMIT " . (int) $limit . " OFFSET {$offset}", ARRAY_A );
+			$offset += $limit;
 		}
 
 		$error = dgm_db_error();
@@ -502,7 +742,17 @@ function dgm_dump_table_php( $handle, $table ) {
 				$last = $next;
 			}
 		}
-	} while ( count( $rows ) === 200 );
+		if ( count( $rows ) === $limit && dgm_snapshot_should_pause() ) {
+			return array(
+				'pending' => true,
+				'header'  => true,
+				'count'   => $count,
+				'written' => $written,
+				'last'    => $last,
+				'offset'  => $offset,
+			);
+		}
+	} while ( count( $rows ) === $limit );
 
 	if ( $written !== $count ) {
 		return new WP_Error( 'dgm_snapshot', __( 'The snapshot row count did not match the table.', 'demo-growth-memberships' ) );
@@ -517,26 +767,33 @@ function dgm_dump_table_php( $handle, $table ) {
  * Dump the users or usermeta rows for people who have a role on this site.
  *
  * @param resource $handle File handle.
- * @param string   $table  users or usermeta.
- * @return true|WP_Error
+ * @param string     $table  users or usermeta.
+ * @param array|null $resume Partial progress for a paused web snapshot.
+ * @return true|array|WP_Error
  */
-function dgm_dump_network_table( $handle, $table ) {
+function dgm_dump_network_table( $handle, $table, $resume = null ) {
 	global $wpdb;
 
-	$create = dgm_show_create_table( $table );
+	$resumed = is_array( $resume ) && ! empty( $resume['header'] );
+	$create  = $resumed ? '' : dgm_show_create_table( $table );
 	if ( is_wp_error( $create ) ) {
 		return $create;
 	}
 
-	$ids   = dgm_site_user_ids();
-	$count = $table === $wpdb->users ? dgm_count_user_rows( $ids ) : dgm_site_usermeta_count( $ids );
-	fwrite( $handle, 'table ' . $table . " php\n" );
-	fwrite( $handle, 'create ' . base64_encode( $create ) . "\n" );
-	fwrite( $handle, 'count ' . (int) $count . "\n" );
+	$ids    = dgm_site_user_ids();
+	$count  = $resumed ? (int) $resume['count'] : ( $table === $wpdb->users ? dgm_count_user_rows( $ids ) : dgm_site_usermeta_count( $ids ) );
+	$limit  = empty( $GLOBALS['dgm_snapshot_deadline'] ) ? 200 : 50;
+	$chunks = array_chunk( $ids, $limit );
+	$start  = $resumed ? (int) $resume['id_offset'] : 0;
+	if ( ! $resumed ) {
+		fwrite( $handle, 'table ' . $table . " php\n" );
+		fwrite( $handle, 'create ' . base64_encode( $create ) . "\n" );
+		fwrite( $handle, 'count ' . (int) $count . "\n" );
+	}
 
-	$written = 0;
-	foreach ( array_chunk( $ids, 200 ) as $chunk ) {
-		if ( ! $chunk ) {
+	$written = $resumed ? (int) $resume['written'] : 0;
+	foreach ( $chunks as $index => $chunk ) {
+		if ( $index < $start || ! $chunk ) {
 			continue;
 		}
 		$placeholders = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
@@ -559,6 +816,15 @@ function dgm_dump_network_table( $handle, $table ) {
 			}
 			fwrite( $handle, 'row ' . $encoded . "\n" );
 			++$written;
+		}
+		if ( dgm_snapshot_should_pause() && $index < ( count( $chunks ) - 1 ) ) {
+			return array(
+				'pending'   => true,
+				'header'    => true,
+				'count'     => (int) $count,
+				'written'   => $written,
+				'id_offset' => $index + 1,
+			);
 		}
 	}
 

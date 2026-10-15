@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.3**.
+Current release: **1.1.4**.
 
 ## Setup
 
@@ -24,7 +24,7 @@ Turning demo mode off for a site restores email, orders, and the rest of the dem
 
 The demo is a sandbox. People logged in as `democlient` can add members, edit records, and submit forms. A saved database snapshot is restored every night at 3:00 AM America/Chicago so the day’s changes do not remain.
 
-Each site has its own snapshot under `wp-content/dgm-snapshots/<site-id>/`. The folder is not inside uploads. Open **Settings > Demo Growth Memberships** on that site (`manage_options`) to save a snapshot, restore it, turn on the nightly reset, and set failure alert emails. Nightly reset stays off until a snapshot exists. Sandbox limits start on and apply only while demo mode is on. Administrator and super admin accounts keep their normal dashboard, menus, and capabilities. The democlient account does not.
+Each site has its own snapshot under `wp-content/dgm-snapshots/<site-id>/`. The folder is not inside uploads. Open **Settings > Demo Growth Memberships** on that site (`manage_options`) to save a snapshot, restore it, turn on the nightly reset, and set failure alert emails. **Restore database now** runs that restore immediately and does not wait for 3:00 AM. Nightly reset can stay off. Nightly reset stays off until a snapshot exists. Sandbox limits start on and apply only while demo mode is on. Administrator and super admin accounts keep their normal dashboard, menus, and capabilities. The democlient account does not.
 
 The snapshot includes only that site’s tables, plus the network `users` and `usermeta` rows for people who have a role on that site. Transients, sessions, and this plugin’s `dgm_` options are left out, and a restore writes those options back so it cannot change the plugin’s own settings, schedule, or reset log.
 
@@ -119,6 +119,10 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.4
+
+- Save a snapshot in short steps so a large site finishes, and show that new snapshot when the last step completes. Until then, the page keeps the previous snapshot date and shows how many tables are done.
 
 ### 1.1.3
 

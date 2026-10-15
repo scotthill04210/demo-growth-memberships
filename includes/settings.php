@@ -297,9 +297,13 @@ function dgm_store_demo_password( $password, $clear ) {
  *
  * @param bool $network Whether the save came from Network Admin.
  */
-function dgm_redirect_after_settings_save( $network ) {
+function dgm_redirect_after_settings_save( $network, $args = array() ) {
 	$url = $network ? network_admin_url( 'settings.php?page=dgm-settings' ) : admin_url( 'options-general.php?page=dgm-settings' );
-	wp_safe_redirect( add_query_arg( 'dgm-updated', '1', $url ) );
+	if ( ! is_array( $args ) ) {
+		$args = array();
+	}
+	$args['dgm-updated'] = '1';
+	wp_safe_redirect( add_query_arg( $args, $url ) );
 	exit;
 }
 
@@ -358,7 +362,7 @@ function dgm_render_site_settings_page() {
 	echo '<tr><th scope="row">' . esc_html__( 'Nightly reset', 'demo-growth-memberships' ) . '</th><td>';
 	echo '<label><input type="checkbox" name="dgm_nightly_reset" value="1" ' . checked( dgm_nightly_reset_enabled(), true, false ) . disabled( ! $meta, true, false ) . ' /> ';
 	echo esc_html__( 'Restore the snapshot every night at 3:00 AM America/Chicago', 'demo-growth-memberships' ) . '</label>';
-	echo '<p class="description">' . esc_html__( 'This stays off until a snapshot exists.', 'demo-growth-memberships' ) . '</p></td></tr>';
+	echo '<p class="description">' . esc_html__( 'This stays off until a snapshot exists. Restore database now, below, runs that same restore immediately.', 'demo-growth-memberships' ) . '</p></td></tr>';
 	echo '<tr><th scope="row"><label for="dgm-alert-emails">' . esc_html__( 'Failure alert emails', 'demo-growth-memberships' ) . '</label></th><td>';
 	echo '<textarea class="large-text" rows="5" id="dgm-alert-emails" name="dgm_alert_emails">' . esc_textarea( $email_text ) . '</textarea>';
 	echo '<p class="description">' . esc_html__( 'One address per line or separated by commas, up to 10. Invalid addresses are skipped. DGM_ALERT_EMAIL in wp-config.php is always added when an alert is sent.', 'demo-growth-memberships' ) . '</p></td></tr>';
@@ -367,6 +371,17 @@ function dgm_render_site_settings_page() {
 	echo '</form>';
 
 	echo '<h2>' . esc_html__( 'Snapshot', 'demo-growth-memberships' ) . '</h2>';
+	$build = dgm_snapshot_build_state( (int) get_current_blog_id() );
+	if ( $build ) {
+		$done  = isset( $build['index'] ) ? (int) $build['index'] : 0;
+		$total = isset( $build['tables'] ) && is_array( $build['tables'] ) ? count( $build['tables'] ) : 0;
+		echo '<p><strong>' . esc_html( sprintf(
+			/* translators: 1: tables finished, 2: total tables. */
+			__( 'Saving a new snapshot: %1$d of %2$d tables. The date below stays on the last finished snapshot until this save completes.', 'demo-growth-memberships' ),
+			$done,
+			$total
+		) ) . '</strong></p>';
+	}
 	if ( $meta ) {
 		$when = isset( $meta['created'] ) ? wp_date( 'M j, Y g:i a', (int) $meta['created'] ) : '';
 		$size = isset( $meta['bytes'] ) && function_exists( 'size_format' ) ? size_format( (int) $meta['bytes'] ) : '';
@@ -381,17 +396,26 @@ function dgm_render_site_settings_page() {
 		echo '<p>' . esc_html__( 'No snapshot yet.', 'demo-growth-memberships' ) . '</p>';
 	}
 
-	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-right:8px">';
+	$continue = $build && isset( $_GET['dgm-snapshot-continue'] ) && '1' === (string) $_GET['dgm-snapshot-continue'];
+	echo '<form method="post" id="dgm-save-snapshot" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-right:8px">';
 	wp_nonce_field( 'dgm_save_snapshot' );
 	echo '<input type="hidden" name="action" value="dgm_save_snapshot" />';
-	submit_button( __( 'Save snapshot', 'demo-growth-memberships' ), 'secondary', 'submit', false );
+	submit_button( $build ? __( 'Continue saving snapshot', 'demo-growth-memberships' ) : __( 'Save snapshot', 'demo-growth-memberships' ), 'secondary', 'dgm-save-snapshot-button', false );
 	echo '</form>';
+	if ( $continue ) {
+		echo '<script>document.getElementById("dgm-save-snapshot").submit();</script>';
+	}
 
-	$confirm = __( 'Restore this site from the snapshot? Changes since the snapshot will be replaced.', 'demo-growth-memberships' );
-	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block" onsubmit="return window.confirm(' . esc_attr( dgm_json_for_script( $confirm ) ) . ');">';
+	echo '<h2>' . esc_html__( 'Restore database now', 'demo-growth-memberships' ) . '</h2>';
+	echo '<p>' . esc_html__( 'This runs the nightly database restore immediately. It does not wait for 3:00 AM, and nightly reset can stay off. Demo mode must be on. Changes made since the snapshot are replaced.', 'demo-growth-memberships' ) . '</p>';
+	$confirm = __( 'Restore this site from the snapshot now? Changes since the snapshot will be replaced.', 'demo-growth-memberships' );
+	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return window.confirm(' . esc_attr( dgm_json_for_script( $confirm ) ) . ');">';
 	wp_nonce_field( 'dgm_restore_now' );
 	echo '<input type="hidden" name="action" value="dgm_restore_now" />';
-	submit_button( __( 'Restore now', 'demo-growth-memberships' ), 'delete', 'submit', false, $meta ? '' : 'disabled' );
+	submit_button( __( 'Restore database now', 'demo-growth-memberships' ), 'delete', 'submit', false, $meta ? '' : 'disabled' );
+	if ( ! $meta ) {
+		echo '<p class="description">' . esc_html__( 'Save a snapshot before restoring.', 'demo-growth-memberships' ) . '</p>';
+	}
 	echo '</form>';
 
 	echo '<h2>' . esc_html__( 'Test alert', 'demo-growth-memberships' ) . '</h2>';
@@ -571,13 +595,34 @@ function dgm_handle_save_snapshot() {
 	}
 
 	check_admin_referer( 'dgm_save_snapshot' );
-	$result = dgm_create_snapshot();
+	$result = dgm_create_snapshot( array( 'budget' => 20 ) );
 	if ( is_wp_error( $result ) ) {
 		dgm_flash_notice( 'error', $result->get_error_message() );
-	} else {
-		dgm_flash_notice( 'success', __( 'Snapshot saved.', 'demo-growth-memberships' ) );
+		dgm_redirect_after_settings_save( false );
 	}
 
+	if ( is_array( $result ) && ! empty( $result['pending'] ) ) {
+		dgm_flash_notice(
+			'success',
+			sprintf(
+				/* translators: 1: tables finished, 2: total tables. */
+				__( 'Saving snapshot: %1$d of %2$d tables.', 'demo-growth-memberships' ),
+				isset( $result['done'] ) ? (int) $result['done'] : 0,
+				isset( $result['total'] ) ? (int) $result['total'] : 0
+			)
+		);
+		dgm_redirect_after_settings_save( false, array( 'dgm-snapshot-continue' => '1' ) );
+	}
+
+	$created = is_array( $result ) && isset( $result['created'] ) ? (int) $result['created'] : time();
+	dgm_flash_notice(
+		'success',
+		sprintf(
+			/* translators: %s: date and time. */
+			__( 'Snapshot saved. %s.', 'demo-growth-memberships' ),
+			wp_date( 'M j, Y g:i a', $created )
+		)
+	);
 	dgm_redirect_after_settings_save( false );
 }
 
@@ -590,7 +635,12 @@ function dgm_handle_restore_now() {
 	}
 
 	check_admin_referer( 'dgm_restore_now' );
-	$result = dgm_restore_site( array( 'manual' => true ) );
+	$result = dgm_restore_site(
+		array(
+			'manual'   => true,
+			'override' => true,
+		)
+	);
 	if ( is_wp_error( $result ) ) {
 		dgm_flash_notice( 'error', $result->get_error_message() );
 	} else {

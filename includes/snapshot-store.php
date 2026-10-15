@@ -296,6 +296,7 @@ function dgm_snapshot_basename_ok( $name, $kind ) {
  * @return array|null
  */
 function dgm_read_json_file( $path ) {
+	clearstatcache( true, $path );
 	if ( ! is_file( $path ) ) {
 		return null;
 	}
