@@ -255,6 +255,7 @@ function dgm_print_demo_login_notice_css() {
 
 	echo '<style id="dgm-demo-login-notice-css">'
 		. '.dgm-demo-login-notice{position:fixed;z-index:2147482000;right:16px;bottom:68px;width:min(100% - 32px,340px);box-sizing:border-box;}'
+		. '@media screen and (min-width:783px){.dgm-demo-login-notice{top:16px;bottom:auto;}body.admin-bar .dgm-demo-login-notice{top:48px;}}'
 		. '.dgm-demo-login-notice-card{position:relative;margin:0;padding:16px 16px 14px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:left;}'
 		. '.dgm-demo-login-notice-card h2{margin:0 28px 12px 0;font-size:16px;line-height:1.3;}'
 		. '.dgm-demo-login-notice-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;}'

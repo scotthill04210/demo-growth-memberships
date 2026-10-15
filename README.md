@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.10**.
+Current release: **1.1.11**.
 
 ## Setup
 
@@ -119,6 +119,11 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.11
+
+- Show an unauthorized page to signed-out visitors unless they arrived from growthmemberships.com or one of its subdomains.
+- Place the demo login card at the top right on desktop screens.
 
 ### 1.1.10
 

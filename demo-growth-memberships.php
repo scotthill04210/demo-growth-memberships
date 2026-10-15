@@ -3,7 +3,7 @@
  * Plugin Name: Demo Growth Memberships
  * Plugin URI: https://github.com/scotthill04210/demo-growth-memberships
  * Description: Demo mode for a multisite membership site. Prefills a demo login, blocks outgoing email and orders, and can restore a per-site snapshot every night.
- * Version: 1.1.10
+ * Version: 1.1.11
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
@@ -40,6 +40,7 @@ define(
 unset( $dgm_plugin_header );
 
 require_once DGM_PLUGIN_DIR . 'includes/helpers.php';
+require_once DGM_PLUGIN_DIR . 'includes/gate.php';
 require_once DGM_PLUGIN_DIR . 'includes/login.php';
 require_once DGM_PLUGIN_DIR . 'includes/mail.php';
 require_once DGM_PLUGIN_DIR . 'includes/orders.php';
@@ -62,6 +63,7 @@ function dgm_boot() {
 	add_action( 'init', 'dgm_load_textdomain' );
 	dgm_register_update_hooks();
 	dgm_register_settings_hooks();
+	dgm_register_gate_hooks();
 	dgm_register_login_hooks();
 	dgm_register_mail_hooks();
 	dgm_register_order_hooks();
