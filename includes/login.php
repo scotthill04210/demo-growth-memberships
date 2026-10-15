@@ -254,11 +254,17 @@ function dgm_print_demo_login_notice_css() {
 	$done = true;
 
 	echo '<style id="dgm-demo-login-notice-css">'
-		. '.dgm-demo-login-notice{position:fixed;z-index:2147482000;top:0;right:0;bottom:52px;left:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:rgba(0,0,0,.45);box-sizing:border-box;}'
-		. '.dgm-demo-login-notice[hidden]{display:none;}'
-		. '.dgm-demo-login-notice-card{position:relative;width:min(100%,420px);margin:0;padding:28px 24px 24px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:center;}'
-		. '.dgm-demo-login-notice-card p{margin:0 0 8px;font-size:18px;line-height:1.4;}'
-		. '.dgm-demo-login-notice-close{position:absolute;top:8px;right:8px;border:0;background:transparent;color:#1d2327;font-size:22px;line-height:1;cursor:pointer;}'
+		. '.dgm-demo-login-notice{position:fixed;z-index:2147482000;right:16px;bottom:68px;width:min(100% - 32px,340px);box-sizing:border-box;}'
+		. '.dgm-demo-login-notice-card{position:relative;margin:0;padding:16px 16px 14px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:left;}'
+		. '.dgm-demo-login-notice-card h2{margin:0 28px 12px 0;font-size:16px;line-height:1.3;}'
+		. '.dgm-demo-login-notice-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;}'
+		. '.dgm-demo-login-notice-row span{font-size:14px;line-height:1.4;word-break:break-all;}'
+		. '.dgm-demo-login-notice-copy,.dgm-demo-login-notice-min,.dgm-demo-login-notice-open{border:0;border-radius:4px;background:#2271b1;color:#fff;font-size:13px;line-height:1.4;cursor:pointer;}'
+		. '.dgm-demo-login-notice-copy{padding:6px 10px;white-space:nowrap;}'
+		. '.dgm-demo-login-notice-min{position:absolute;top:8px;right:8px;padding:4px 8px;background:#1d2327;}'
+		. '.dgm-demo-login-notice-open{display:none;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);}'
+		. '.dgm-demo-login-notice.is-minimized .dgm-demo-login-notice-card{display:none;}'
+		. '.dgm-demo-login-notice.is-minimized .dgm-demo-login-notice-open{display:inline-block;}'
 		. '</style>';
 }
 
@@ -276,12 +282,34 @@ function dgm_render_demo_login_notice() {
 
 	dgm_print_demo_login_notice_css();
 
-	echo '<div id="dgm-demo-login-notice" class="dgm-demo-login-notice" role="dialog" aria-modal="true" aria-labelledby="dgm-demo-login-notice-title">';
+	echo '<div id="dgm-demo-login-notice" class="dgm-demo-login-notice" role="region" aria-labelledby="dgm-demo-login-notice-title">';
 	echo '<div class="dgm-demo-login-notice-card">';
-	echo '<button type="button" class="dgm-demo-login-notice-close" aria-label="' . esc_attr__( 'Close', 'demo-growth-memberships' ) . '">&times;</button>';
-	echo '<p id="dgm-demo-login-notice-title">' . esc_html__( 'Please Login with:', 'demo-growth-memberships' ) . '</p>';
-	echo '<p>' . esc_html__( 'username: democlient', 'demo-growth-memberships' ) . '</p>';
-	echo '<p>' . esc_html__( 'password: Alliance360', 'demo-growth-memberships' ) . '</p>';
-	echo '</div></div>';
-	echo '<script id="dgm-demo-login-notice-js">(function(){var notice=document.getElementById("dgm-demo-login-notice");if(!notice){return;}if(document.body&&notice.parentNode!==document.body){document.body.appendChild(notice);}notice.addEventListener("click",function(event){var close=event.target&&event.target.closest?event.target.closest(".dgm-demo-login-notice-close"):null;if(close){notice.setAttribute("hidden","hidden");}});})();</script>';
+	echo '<button type="button" class="dgm-demo-login-notice-min">' . esc_html__( 'Minimize', 'demo-growth-memberships' ) . '</button>';
+	echo '<h2 id="dgm-demo-login-notice-title">' . esc_html__( 'Please Login with:', 'demo-growth-memberships' ) . '</h2>';
+	echo '<p class="dgm-demo-login-notice-row"><span>' . esc_html__( 'username: democlient', 'demo-growth-memberships' ) . '</span>';
+	echo '<button type="button" class="dgm-demo-login-notice-copy" data-copy="democlient" data-label="' . esc_attr__( 'Copy', 'demo-growth-memberships' ) . '">' . esc_html__( 'Copy', 'demo-growth-memberships' ) . '</button></p>';
+	echo '<p class="dgm-demo-login-notice-row"><span>' . esc_html__( 'password: Alliance360', 'demo-growth-memberships' ) . '</span>';
+	echo '<button type="button" class="dgm-demo-login-notice-copy" data-copy="Alliance360" data-label="' . esc_attr__( 'Copy', 'demo-growth-memberships' ) . '">' . esc_html__( 'Copy', 'demo-growth-memberships' ) . '</button></p>';
+	echo '</div>';
+	echo '<button type="button" class="dgm-demo-login-notice-open">' . esc_html__( 'Demo login', 'demo-growth-memberships' ) . '</button>';
+	echo '</div>';
+
+	$script = '(function(){'
+		. 'var notice=document.getElementById("dgm-demo-login-notice");'
+		. 'if(!notice){return;}'
+		. 'if(document.body&&notice.parentNode!==document.body){document.body.appendChild(notice);}'
+		. 'var key="dgmDemoLoginMinimized";'
+		. 'function setMinimized(minimized){if(minimized){notice.classList.add("is-minimized");}else{notice.classList.remove("is-minimized");}try{window.sessionStorage.setItem(key,minimized?"1":"0");}catch(e){}}'
+		. 'try{if(window.sessionStorage.getItem(key)==="1"){notice.classList.add("is-minimized");}}catch(e){}'
+		. 'var min=notice.querySelector(".dgm-demo-login-notice-min");'
+		. 'var open=notice.querySelector(".dgm-demo-login-notice-open");'
+		. 'if(min){min.addEventListener("click",function(){setMinimized(true);});}'
+		. 'if(open){open.addEventListener("click",function(){setMinimized(false);});}'
+		. 'var copied=' . dgm_json_for_script( __( 'Copied', 'demo-growth-memberships' ) ) . ';'
+		. 'function markCopied(button){var label=button.getAttribute("data-label")||"Copy";button.textContent=copied;window.setTimeout(function(){button.textContent=label;},1500);}'
+		. 'function fallbackCopy(value,button){var field=document.createElement("textarea");field.value=value;document.body.appendChild(field);field.select();try{document.execCommand("copy");}catch(e){}document.body.removeChild(field);markCopied(button);}'
+		. 'notice.addEventListener("click",function(event){var button=event.target&&event.target.closest?event.target.closest(".dgm-demo-login-notice-copy"):null;if(!button){return;}var value=button.getAttribute("data-copy")||"";if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(function(){markCopied(button);}).catch(function(){fallbackCopy(value,button);});return;}fallbackCopy(value,button);});'
+		. '})();';
+
+	echo '<script id="dgm-demo-login-notice-js">' . $script . '</script>';
 }
