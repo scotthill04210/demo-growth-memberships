@@ -85,8 +85,27 @@ function dgm_print_banner_css() {
 	echo '<style id="dgm-demo-banner-css">'
 		. '.dgm-demo-banner-front{position:fixed;z-index:2147483000;bottom:0;left:0;right:0;display:flex !important;align-items:center;justify-content:center;margin:0;padding:12px 16px;background:#1d2327;color:#fff;font-size:14px;line-height:1.4;box-sizing:border-box;text-align:center;}'
 		. '.dgm-demo-banner-front p{margin:0;text-align:center;}'
+		. '.dgm-demo-banner-front a{color:#fff;text-decoration:underline;}'
 		. 'body.dgm-has-banner{padding-bottom:52px;}'
 		. '</style>';
+}
+
+/**
+ * Booking page for a guided tour.
+ *
+ * @return string
+ */
+function dgm_guided_tour_url() {
+	return 'https://bookings.cloud.microsoft/bookwithme/user/03610270f9f945ae90e9710ed58e5793%40localimageco.com/meetingtype/Wg0XBgxJqEqHF2pVRthXWg2?anonymous&ismsaljsauthenabled=true';
+}
+
+/**
+ * Link that opens the guided tour in a new tab.
+ *
+ * @return string
+ */
+function dgm_guided_tour_link() {
+	return '<a href="' . esc_url( dgm_guided_tour_url() ) . '" target="_blank" rel="noopener noreferrer">' . esc_html__( 'Book a Guided Tour', 'demo-growth-memberships' ) . '</a>';
 }
 
 /**
@@ -104,7 +123,7 @@ function dgm_render_frontend_banner() {
 	dgm_print_banner_css();
 
 	echo '<div id="dgm-demo-banner" class="dgm-demo-banner-front" role="region" aria-label="' . esc_attr__( 'Demo site notice', 'demo-growth-memberships' ) . '">';
-	echo '<p>' . esc_html( dgm_banner_message() ) . '</p>';
+	echo '<p>' . esc_html( dgm_banner_message() ) . ' ' . dgm_guided_tour_link() . '</p>';
 	echo '</div>';
 	echo '<script id="dgm-demo-banner-place">var dgmBanner=document.getElementById("dgm-demo-banner");if(dgmBanner&&document.body&&dgmBanner.parentNode!==document.body){document.body.appendChild(dgmBanner);}</script>';
 }
@@ -118,6 +137,6 @@ function dgm_render_admin_banner() {
 	}
 
 	echo '<div id="dgm-demo-banner" class="notice notice-warning">';
-	echo '<p>' . esc_html( dgm_banner_message() ) . '</p>';
+	echo '<p>' . esc_html( dgm_banner_message() ) . ' ' . dgm_guided_tour_link() . '</p>';
 	echo '</div>';
 }

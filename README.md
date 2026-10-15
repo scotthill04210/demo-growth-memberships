@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.12**.
+Current release: **1.1.13**.
 
 ## Setup
 
@@ -119,6 +119,10 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.13
+
+- Add a Book a Guided Tour link to the demo notice. It opens the booking page in a new tab.
 
 ### 1.1.12
 
