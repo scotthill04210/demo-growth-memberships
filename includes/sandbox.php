@@ -152,11 +152,11 @@ function dgm_sandbox_editable_roles( $roles ) {
  * Keep demo visitors out of settings, plugin, and theme screens.
  */
 function dgm_sandbox_block_screens() {
-	if ( dgm_sandbox_user_is_exempt() || ! is_admin() ) {
+	global $pagenow;
+
+	if ( 'index.php' === $pagenow || dgm_sandbox_user_is_exempt() || ! is_admin() ) {
 		return;
 	}
-
-	global $pagenow;
 	$page    = isset( $_GET['page'] ) && is_string( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	$blocked = array( 'options-writing.php', 'options-reading.php', 'options-discussion.php', 'options-media.php', 'options-permalink.php', 'options.php', 'plugins.php', 'plugin-install.php', 'plugin-editor.php', 'themes.php', 'theme-install.php', 'theme-editor.php', 'update.php', 'update-core.php', 'customize.php', 'users.php', 'user-new.php', 'user-edit.php' );
 

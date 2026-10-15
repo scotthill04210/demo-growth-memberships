@@ -110,7 +110,7 @@ function dgm_is_login_screen() {
  * Block front-end and admin requests while this site is resetting.
  */
 function dgm_maintenance_block() {
-	if ( ! dgm_maintenance_is_active() || dgm_is_login_screen() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+	if ( ! dgm_maintenance_is_active() || dgm_is_login_screen() || dgm_user_is_privileged() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 		return;
 	}
 
@@ -138,7 +138,7 @@ function dgm_maintenance_block_ajax() {
  */
 function dgm_maintenance_block_rest( $result = null, $server = null, $request = null ) {
 	unset( $server, $request );
-	if ( ! dgm_maintenance_is_active() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+	if ( ! dgm_maintenance_is_active() || dgm_user_is_privileged() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 		return $result;
 	}
 

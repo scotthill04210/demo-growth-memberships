@@ -73,21 +73,23 @@ function dgm_login_demo_button() {
 }
 
 /**
- * Prefill the username and the password saved for this site.
+ * Fill the demo account only when Demo login is clicked.
+ *
+ * Leaving the fields alone lets an administrator sign in with their own account.
  */
 function dgm_login_autofill_script() {
 	if ( ! dgm_is_demo_mode() || ! dgm_is_wp_login_request() ) {
 		return;
 	}
 
-	$script = '(function(){var user=document.getElementById("user_login");if(user){user.value=' . dgm_json_for_script( 'democlient' ) . ';}';
+	$script = '(function(){var button=document.getElementById("dgm-demo-login");if(!button){return;}button.addEventListener("click",function(){var user=document.getElementById("user_login");if(user){user.value=' . dgm_json_for_script( 'democlient' ) . ';}';
 
 	$password = dgm_demo_password();
 	if ( '' !== $password ) {
 		$script .= 'var pass=document.getElementById("user_pass");if(pass){pass.value=' . dgm_json_for_script( $password ) . ';}';
 	}
 
-	$script .= '})();';
+	$script .= '});})();';
 
 	echo '<script id="dgm-login-autofill">' . $script . '</script>';
 }

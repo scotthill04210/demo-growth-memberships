@@ -64,21 +64,31 @@ function dgm_sandbox_is_active() {
  * @return bool
  */
 function dgm_user_is_privileged( $user = null ) {
-	if ( is_numeric( $user ) ) {
+	if ( is_int( $user ) || ( is_string( $user ) && is_numeric( $user ) ) ) {
 		$user_id = (int) $user;
 		if ( $user_id <= 0 ) {
 			return false;
 		}
 		$user = get_userdata( $user_id );
-	}
-	if ( ! $user instanceof WP_User ) {
+	} elseif ( ! $user instanceof WP_User ) {
 		$user = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
 	}
 	if ( ! $user instanceof WP_User || ! $user->exists() || 'democlient' === $user->user_login ) {
 		return false;
 	}
 
-	if ( in_array( 'administrator', (array) $user->roles, true ) ) {
+	$roles = isset( $user->roles ) ? (array) $user->roles : array();
+	if ( in_array( 'administrator', $roles, true ) ) {
+		return true;
+	}
+
+	$owned = isset( $user->caps ) && is_array( $user->caps ) ? $user->caps : array();
+	if ( ! empty( $owned['administrator'] ) ) {
+		return true;
+	}
+
+	$allcaps = isset( $user->allcaps ) && is_array( $user->allcaps ) ? $user->allcaps : array();
+	if ( ! empty( $allcaps['manage_options'] ) || ! empty( $owned['manage_options'] ) ) {
 		return true;
 	}
 
