@@ -18,6 +18,7 @@ function dgm_register_settings_hooks() {
 	add_filter( 'network_admin_plugin_action_links_' . $basename, 'dgm_plugin_action_links' );
 	add_action( 'admin_init', 'dgm_handle_settings_save' );
 	add_action( 'admin_post_dgm_save_snapshot', 'dgm_handle_save_snapshot' );
+	add_action( 'wp_ajax_dgm_save_snapshot', 'dgm_ajax_save_snapshot' );
 	add_action( 'admin_post_dgm_restore_now', 'dgm_handle_restore_now' );
 	add_action( 'admin_post_dgm_test_alert', 'dgm_handle_test_alert' );
 	add_action( 'network_admin_menu', 'dgm_register_network_settings_page' );
@@ -372,20 +373,10 @@ function dgm_render_site_settings_page() {
 
 	echo '<h2>' . esc_html__( 'Snapshot', 'demo-growth-memberships' ) . '</h2>';
 	$build = dgm_snapshot_build_state( (int) get_current_blog_id() );
-	if ( $build ) {
-		$done  = isset( $build['index'] ) ? (int) $build['index'] : 0;
-		$total = isset( $build['tables'] ) && is_array( $build['tables'] ) ? count( $build['tables'] ) : 0;
-		echo '<p><strong>' . esc_html( sprintf(
-			/* translators: 1: tables finished, 2: total tables. */
-			__( 'Saving a new snapshot: %1$d of %2$d tables. The date below stays on the last finished snapshot until this save completes.', 'demo-growth-memberships' ),
-			$done,
-			$total
-		) ) . '</strong></p>';
-	}
 	if ( $meta ) {
 		$when = isset( $meta['created'] ) ? wp_date( 'M j, Y g:i a', (int) $meta['created'] ) : '';
 		$size = isset( $meta['bytes'] ) && function_exists( 'size_format' ) ? size_format( (int) $meta['bytes'] ) : '';
-		echo '<p>' . esc_html( sprintf(
+		echo '<p id="dgm-snapshot-summary">' . esc_html( sprintf(
 			/* translators: 1: date, 2: file size, 3: number of tables. */
 			__( 'Snapshot from %1$s, %2$s, %3$d tables.', 'demo-growth-memberships' ),
 			$when,
@@ -393,18 +384,30 @@ function dgm_render_site_settings_page() {
 			isset( $meta['tables'] ) ? (int) $meta['tables'] : 0
 		) ) . '</p>';
 	} else {
-		echo '<p>' . esc_html__( 'No snapshot yet.', 'demo-growth-memberships' ) . '</p>';
+		echo '<p id="dgm-snapshot-summary">' . esc_html__( 'No snapshot yet.', 'demo-growth-memberships' ) . '</p>';
 	}
 
-	$continue = $build && isset( $_GET['dgm-snapshot-continue'] ) && '1' === (string) $_GET['dgm-snapshot-continue'];
-	echo '<form method="post" id="dgm-save-snapshot" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-right:8px">';
+	echo '<div id="dgm-snapshot-progress" hidden style="max-width:420px;margin:12px 0">';
+	echo '<div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="background:#dcdcde;height:18px;border-radius:2px;overflow:hidden">';
+	echo '<div id="dgm-snapshot-bar" style="background:#2271b1;height:100%;width:0"></div>';
+	echo '</div>';
+	echo '<p id="dgm-snapshot-status" style="margin:8px 0 0"></p>';
+	echo '</div>';
+	echo '<p><button type="button" class="button" id="dgm-snapshot-start">' . esc_html( $build ? __( 'Continue saving snapshot', 'demo-growth-memberships' ) : __( 'Save snapshot', 'demo-growth-memberships' ) ) . '</button></p>';
+	echo '<noscript><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 	wp_nonce_field( 'dgm_save_snapshot' );
 	echo '<input type="hidden" name="action" value="dgm_save_snapshot" />';
-	submit_button( $build ? __( 'Continue saving snapshot', 'demo-growth-memberships' ) : __( 'Save snapshot', 'demo-growth-memberships' ), 'secondary', 'dgm-save-snapshot-button', false );
-	echo '</form>';
-	if ( $continue ) {
-		echo '<script>document.getElementById("dgm-save-snapshot").submit();</script>';
-	}
+	submit_button( __( 'Save snapshot', 'demo-growth-memberships' ), 'secondary', 'dgm-save-snapshot-button', false );
+	echo '</form></noscript>';
+	$snapshot_script = array(
+		'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+		'nonce'   => wp_create_nonce( 'dgm_save_snapshot' ),
+		'resume'  => (bool) $build,
+		'starting'=> __( 'Saving snapshot…', 'demo-growth-memberships' ),
+		'again'   => __( 'Save snapshot', 'demo-growth-memberships' ),
+		'error'   => __( 'The snapshot could not be saved.', 'demo-growth-memberships' ),
+	);
+	echo '<script>(function(){var config=' . dgm_json_for_script( $snapshot_script ) . ';var button=document.getElementById("dgm-snapshot-start");var panel=document.getElementById("dgm-snapshot-progress");var bar=document.getElementById("dgm-snapshot-bar");var status=document.getElementById("dgm-snapshot-status");var summary=document.getElementById("dgm-snapshot-summary");if(!button||!panel||!bar||!status||!window.fetch||!window.FormData){return;}var running=false;function paint(data){panel.hidden=false;var percent=typeof data.percent==="number"?data.percent:0;bar.style.width=String(percent)+"%";var track=bar.parentNode;if(track&&track.setAttribute){track.setAttribute("aria-valuenow",String(percent));}if(data.message){status.textContent=data.message;}if(data.summary&&summary){summary.textContent=data.summary;}if(!data.pending){bar.style.background="#00a32a";}}function fail(message){running=false;button.disabled=false;paint({percent:0,message:message,pending:true});}function step(){var body=new FormData();body.append("action","dgm_save_snapshot");body.append("nonce",config.nonce);window.fetch(config.ajaxUrl,{method:"POST",credentials:"same-origin",body:body}).then(function(response){return response.json();}).then(function(payload){if(!payload||!payload.success||!payload.data){fail(payload&&payload.data&&payload.data.message?payload.data.message:config.error);return;}paint(payload.data);if(payload.data.pending){window.setTimeout(step,payload.data.wait?2000:0);return;}running=false;button.disabled=false;button.textContent=config.again;var restore=document.getElementById("dgm-restore-now");if(restore){restore.disabled=false;}var hint=document.getElementById("dgm-snapshot-needed");if(hint&&hint.parentNode){hint.parentNode.removeChild(hint);}}).catch(function(){fail(config.error);});}function start(){if(running){return;}running=true;button.disabled=true;bar.style.background="#2271b1";paint({percent:0,message:config.starting,pending:true});step();}button.addEventListener("click",start);if(config.resume){start();}})();</script>';
 
 	echo '<h2>' . esc_html__( 'Restore database now', 'demo-growth-memberships' ) . '</h2>';
 	echo '<p>' . esc_html__( 'This runs the nightly database restore immediately. It does not wait for 3:00 AM, and nightly reset can stay off. Demo mode must be on. Changes made since the snapshot are replaced.', 'demo-growth-memberships' ) . '</p>';
@@ -412,9 +415,9 @@ function dgm_render_site_settings_page() {
 	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return window.confirm(' . esc_attr( dgm_json_for_script( $confirm ) ) . ');">';
 	wp_nonce_field( 'dgm_restore_now' );
 	echo '<input type="hidden" name="action" value="dgm_restore_now" />';
-	submit_button( __( 'Restore database now', 'demo-growth-memberships' ), 'delete', 'submit', false, $meta ? '' : 'disabled' );
+	submit_button( __( 'Restore database now', 'demo-growth-memberships' ), 'delete', 'submit', false, $meta ? 'id="dgm-restore-now"' : 'disabled id="dgm-restore-now"' );
 	if ( ! $meta ) {
-		echo '<p class="description">' . esc_html__( 'Save a snapshot before restoring.', 'demo-growth-memberships' ) . '</p>';
+		echo '<p class="description" id="dgm-snapshot-needed">' . esc_html__( 'Save a snapshot before restoring.', 'demo-growth-memberships' ) . '</p>';
 	}
 	echo '</form>';
 
@@ -584,6 +587,132 @@ function dgm_render_flash_notice() {
 	delete_transient( $key );
 	$class = isset( $flash['type'] ) && 'error' === $flash['type'] ? 'notice-error' : 'notice-success';
 	echo '<div class="notice ' . esc_attr( $class ) . '"><p>' . esc_html( $flash['message'] ) . '</p></div>';
+}
+
+/**
+ * One step of a snapshot save, shaped for the progress bar.
+ *
+ * @param array|WP_Error $result Snapshot step result.
+ * @return array|WP_Error
+ */
+function dgm_snapshot_step_payload( $result ) {
+	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+	if ( ! is_array( $result ) ) {
+		return new WP_Error( 'dgm_snapshot', __( 'The snapshot could not be saved.', 'demo-growth-memberships' ) );
+	}
+
+	if ( ! empty( $result['pending'] ) ) {
+		$done    = isset( $result['done'] ) ? (int) $result['done'] : 0;
+		$total   = isset( $result['total'] ) ? (int) $result['total'] : 0;
+		$percent = $total > 0 ? (int) floor( ( $done / $total ) * 100 ) : 0;
+		if ( $percent > 99 ) {
+			$percent = 99;
+		}
+
+		return array(
+			'pending' => true,
+			'done'    => $done,
+			'total'   => $total,
+			'percent' => $percent,
+			'message' => sprintf(
+				/* translators: 1: tables finished, 2: total tables. */
+				__( 'Saving snapshot: %1$d of %2$d tables.', 'demo-growth-memberships' ),
+				$done,
+				$total
+			),
+		);
+	}
+
+	$created = isset( $result['created'] ) ? (int) $result['created'] : time();
+	$when    = wp_date( 'M j, Y g:i a', $created );
+	$bytes   = isset( $result['bytes'] ) ? (int) $result['bytes'] : 0;
+	$size    = function_exists( 'size_format' ) ? size_format( $bytes ) : (string) $bytes;
+	$tables  = isset( $result['tables'] ) ? (int) $result['tables'] : 0;
+
+	return array(
+		'pending' => false,
+		'percent' => 100,
+		'message' => sprintf(
+			/* translators: %s: date and time. */
+			__( 'Snapshot saved. %s.', 'demo-growth-memberships' ),
+			$when
+		),
+		'summary' => sprintf(
+			/* translators: 1: date, 2: file size, 3: number of tables. */
+			__( 'Snapshot from %1$s, %2$s, %3$d tables.', 'demo-growth-memberships' ),
+			$when,
+			$size,
+			$tables
+		),
+	);
+}
+
+/**
+ * Whether this site can start a snapshot step right now.
+ *
+ * @return bool
+ */
+function dgm_snapshot_claim_step() {
+	$key = 'dgm_snapshot_step_' . (int) get_current_blog_id();
+	if ( get_transient( $key ) ) {
+		return false;
+	}
+
+	set_transient( $key, '1', 30 );
+
+	return true;
+}
+
+/**
+ * Allow the next snapshot step to start.
+ */
+function dgm_snapshot_release_step() {
+	delete_transient( 'dgm_snapshot_step_' . (int) get_current_blog_id() );
+}
+
+/**
+ * Save the next piece of a snapshot and return progress as JSON.
+ */
+function dgm_ajax_save_snapshot() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error(
+			array(
+				'message' => __( 'Sorry, you are not allowed to access this page.', 'demo-growth-memberships' ),
+			),
+			403
+		);
+	}
+
+	check_ajax_referer( 'dgm_save_snapshot', 'nonce' );
+	if ( ! dgm_snapshot_claim_step() ) {
+		$state = dgm_snapshot_build_state( (int) get_current_blog_id() );
+		$done  = is_array( $state ) && isset( $state['index'] ) ? (int) $state['index'] : 0;
+		$total = is_array( $state ) && isset( $state['tables'] ) && is_array( $state['tables'] ) ? count( $state['tables'] ) : 0;
+		wp_send_json_success(
+			array(
+				'pending' => true,
+				'wait'    => true,
+				'done'    => $done,
+				'total'   => $total,
+				'percent' => $total > 0 ? min( 99, (int) floor( ( $done / $total ) * 100 ) ) : 0,
+				'message' => __( 'Saving snapshot…', 'demo-growth-memberships' ),
+			)
+		);
+	}
+
+	$payload = dgm_snapshot_step_payload( dgm_create_snapshot( array( 'budget' => 20 ) ) );
+	dgm_snapshot_release_step();
+	if ( is_wp_error( $payload ) ) {
+		wp_send_json_error(
+			array(
+				'message' => $payload->get_error_message(),
+			)
+		);
+	}
+
+	wp_send_json_success( $payload );
 }
 
 /**
