@@ -182,7 +182,7 @@ function dgm_banner_dismiss_url() {
 }
 
 /**
- * Add top spacing while the front-end banner is visible.
+ * Add bottom spacing while the front-end banner is visible.
  *
  * @param mixed $classes Body classes.
  * @return array
@@ -212,12 +212,10 @@ function dgm_print_banner_css() {
 	$done = true;
 
 	echo '<style id="dgm-demo-banner-css">'
-		. '.dgm-demo-banner-front{position:fixed;z-index:100000;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0;padding:12px 16px;background:#1d2327;color:#fff;font-size:14px;line-height:1.4;box-sizing:border-box;}'
-		. '.dgm-demo-banner-front p{margin:0;}'
-		. '.dgm-demo-banner-front a{color:#fff;white-space:nowrap;}'
-		. 'body.dgm-has-banner{padding-top:52px;}'
-		. 'body.admin-bar .dgm-demo-banner-front{top:32px;}'
-		. '@media screen and (max-width:782px){body.admin-bar .dgm-demo-banner-front{top:46px;}}'
+		. '.dgm-demo-banner-front{position:fixed;z-index:100000;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:center;margin:0;padding:12px 96px;background:#1d2327;color:#fff;font-size:14px;line-height:1.4;box-sizing:border-box;text-align:center;}'
+		. '.dgm-demo-banner-front p{margin:0;text-align:center;}'
+		. '.dgm-demo-banner-front a{position:absolute;right:16px;top:50%;transform:translateY(-50%);color:#fff;white-space:nowrap;}'
+		. 'body.dgm-has-banner{padding-bottom:52px;}'
 		. '</style>';
 }
 
