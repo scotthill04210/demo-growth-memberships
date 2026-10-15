@@ -2,8 +2,8 @@
 /**
  * Limits for the demo sandbox.
  *
- * Visitors can add and edit content. Plugin, theme, user, and settings changes stay blocked.
- * Administrator and super admin accounts are not limited.
+ * The demo client can add and edit content. Plugin, theme, user, and settings changes stay blocked.
+ * Every other account, including Administrator, keeps normal wp-admin access.
  *
  * @package Demo_Growth_Memberships
  */
@@ -40,19 +40,52 @@ function dgm_register_sandbox_hooks() {
  * @return bool
  */
 function dgm_sandbox_user_is_exempt( $user_id = 0, $user = null ) {
+	static $checking = false;
+
 	if ( ! dgm_sandbox_is_active() ) {
 		return true;
 	}
-
-	if ( $user instanceof WP_User ) {
-		return dgm_user_is_privileged( $user );
+	if ( $checking ) {
+		return true;
 	}
 
-	if ( $user_id <= 0 ) {
-		$user_id = get_current_user_id();
+	if ( ! $user instanceof WP_User ) {
+		if ( $user_id <= 0 && function_exists( 'get_current_user_id' ) ) {
+			$user_id = (int) get_current_user_id();
+		}
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+		if ( function_exists( 'wp_get_current_user' ) ) {
+			$current = wp_get_current_user();
+			if ( $current instanceof WP_User && (int) $current->ID === (int) $user_id ) {
+				$user = $current;
+			}
+		}
+		if ( ! $user instanceof WP_User ) {
+			$checking = true;
+			$user     = get_userdata( (int) $user_id );
+			$checking = false;
+		}
 	}
 
-	return dgm_user_is_privileged( $user_id );
+	if ( ! $user instanceof WP_User || ! $user->exists() ) {
+		return false;
+	}
+	if ( 'democlient' === $user->user_login ) {
+		return false;
+	}
+	if ( dgm_user_is_privileged( $user ) ) {
+		return true;
+	}
+
+	$roles = isset( $user->roles ) ? (array) $user->roles : array();
+	$caps  = dgm_blog_user_caps( (int) $user->ID );
+	if ( in_array( 'client', $roles, true ) || ! empty( $caps['client'] ) ) {
+		return false;
+	}
+
+	return true;
 }
 
 /**
@@ -82,7 +115,7 @@ function dgm_current_user_is_demo_role() {
 function dgm_sandbox_limit_caps( $allcaps = array(), $caps = array(), $args = array(), $user = null ) {
 	unset( $caps, $args );
 	if ( ! is_array( $allcaps ) || ! dgm_sandbox_is_active() ) {
-		return is_array( $allcaps ) ? $allcaps : array();
+		return $allcaps;
 	}
 
 	if ( dgm_sandbox_user_is_exempt( 0, $user ) ) {
@@ -107,7 +140,7 @@ function dgm_sandbox_limit_caps( $allcaps = array(), $caps = array(), $args = ar
  */
 function dgm_sandbox_map_meta_cap( $caps, $cap, $user_id, $args ) {
 	if ( ! is_array( $caps ) || dgm_sandbox_user_is_exempt( (int) $user_id ) ) {
-		return is_array( $caps ) ? $caps : array();
+		return is_array( $caps ) ? $caps : array( 'exist' );
 	}
 
 	if ( ! in_array( $cap, array( 'edit_user', 'delete_user', 'promote_user', 'remove_user' ), true ) || empty( $args[0] ) ) {

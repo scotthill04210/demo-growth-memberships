@@ -354,7 +354,7 @@ function dgm_render_site_settings_page() {
 	echo '<tr><th scope="row">' . esc_html__( 'Sandbox mode', 'demo-growth-memberships' ) . '</th><td>';
 	echo '<label><input type="checkbox" name="dgm_sandbox_mode" value="1" ' . checked( dgm_is_sandbox_mode(), true, false ) . ' /> ';
 	echo esc_html__( 'Let the demo client edit content, and block plugins, themes, user changes, and other settings', 'demo-growth-memberships' ) . '</label>';
-	echo '<p class="description">' . esc_html__( 'Sandbox limits apply only while demo mode is on. They start on. Administrator and super admin accounts are not limited.', 'demo-growth-memberships' ) . '</p></td></tr>';
+	echo '<p class="description">' . esc_html__( 'Sandbox limits apply only while demo mode is on. They start on. They apply to the demo client, not to Administrator or super admin accounts.', 'demo-growth-memberships' ) . '</p></td></tr>';
 	echo '<tr><th scope="row">' . esc_html__( 'Nightly reset', 'demo-growth-memberships' ) . '</th><td>';
 	echo '<label><input type="checkbox" name="dgm_nightly_reset" value="1" ' . checked( dgm_nightly_reset_enabled(), true, false ) . disabled( ! $meta, true, false ) . ' /> ';
 	echo esc_html__( 'Restore the snapshot every night at 3:00 AM America/Chicago', 'demo-growth-memberships' ) . '</label>';

@@ -55,6 +55,97 @@ function dgm_sandbox_is_active() {
 }
 
 /**
+ * Role flags stored for a user on the current site.
+ *
+ * Read from usermeta so a capability check cannot hide the Administrator role.
+ *
+ * @param int $user_id User ID.
+ * @return array
+ */
+function dgm_blog_user_caps( $user_id ) {
+	static $cache = array();
+
+	$user_id = (int) $user_id;
+	$blog_id = function_exists( 'get_current_blog_id' ) ? (int) get_current_blog_id() : 0;
+	$key     = $blog_id . ':' . $user_id;
+	if ( isset( $cache[ $key ] ) ) {
+		return $cache[ $key ];
+	}
+	if ( $user_id <= 0 || ! isset( $GLOBALS['wpdb'] ) ) {
+		$cache[ $key ] = array();
+		return $cache[ $key ];
+	}
+
+	global $wpdb;
+	$meta_key = $wpdb->get_blog_prefix( $blog_id ) . 'capabilities';
+	$raw      = $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->usermeta} WHERE user_id = %d AND meta_key = %s LIMIT 1", $user_id, $meta_key ) );
+	$caps     = is_string( $raw ) ? maybe_unserialize( $raw ) : array();
+	$cache[ $key ] = is_array( $caps ) ? $caps : array();
+
+	return $cache[ $key ];
+}
+
+/**
+ * Whether this site's stored roles include Administrator or another role that can manage options.
+ *
+ * @param int $user_id User ID.
+ * @return bool
+ */
+function dgm_user_meta_is_administrator( $user_id ) {
+	$caps = dgm_blog_user_caps( $user_id );
+	if ( ! empty( $caps['administrator'] ) ) {
+		return true;
+	}
+
+	if ( ! function_exists( 'get_role' ) ) {
+		return false;
+	}
+
+	foreach ( $caps as $role_name => $granted ) {
+		if ( ! $granted || ! is_string( $role_name ) ) {
+			continue;
+		}
+		$role = get_role( $role_name );
+		if ( $role && ! empty( $role->capabilities['manage_options'] ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Network super admin logins.
+ *
+ * @return string[]
+ */
+function dgm_super_admin_logins() {
+	static $logins  = null;
+	static $running = false;
+
+	if ( is_array( $logins ) ) {
+		return $logins;
+	}
+	if ( $running || ! is_multisite() || ! function_exists( 'get_super_admins' ) ) {
+		return array();
+	}
+
+	$running = true;
+	$supers  = get_super_admins();
+	$running = false;
+	$logins  = array();
+	if ( is_array( $supers ) ) {
+		foreach ( $supers as $login ) {
+			if ( is_string( $login ) && '' !== $login && 'democlient' !== $login ) {
+				$logins[] = $login;
+			}
+		}
+	}
+
+	return $logins;
+}
+
+/**
  * Whether this account is an administrator or a network super admin.
  *
  * The democlient login is never treated as privileged. This does not call
@@ -64,40 +155,41 @@ function dgm_sandbox_is_active() {
  * @return bool
  */
 function dgm_user_is_privileged( $user = null ) {
-	if ( is_int( $user ) || ( is_string( $user ) && is_numeric( $user ) ) ) {
+	$user_id = 0;
+	$login   = '';
+
+	if ( $user instanceof WP_User ) {
+		$user_id = (int) $user->ID;
+		$login   = is_string( $user->user_login ) ? $user->user_login : '';
+	} elseif ( is_int( $user ) || ( is_string( $user ) && is_numeric( $user ) ) ) {
 		$user_id = (int) $user;
-		if ( $user_id <= 0 ) {
-			return false;
+	} elseif ( function_exists( 'wp_get_current_user' ) ) {
+		$current = wp_get_current_user();
+		if ( $current instanceof WP_User ) {
+			$user_id = (int) $current->ID;
+			$login   = is_string( $current->user_login ) ? $current->user_login : '';
 		}
-		$user = get_userdata( $user_id );
-	} elseif ( ! $user instanceof WP_User ) {
-		$user = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
 	}
-	if ( ! $user instanceof WP_User || ! $user->exists() || 'democlient' === $user->user_login ) {
+
+	if ( $user_id <= 0 ) {
 		return false;
 	}
-
-	$roles = isset( $user->roles ) ? (array) $user->roles : array();
-	if ( in_array( 'administrator', $roles, true ) ) {
+	if ( '' === $login && isset( $GLOBALS['wpdb'] ) ) {
+		global $wpdb;
+		$found = $wpdb->get_var( $wpdb->prepare( "SELECT user_login FROM {$wpdb->users} WHERE ID = %d", $user_id ) );
+		$login = is_string( $found ) ? $found : '';
+	}
+	if ( 'democlient' === $login ) {
+		return false;
+	}
+	if ( dgm_user_meta_is_administrator( $user_id ) ) {
+		return true;
+	}
+	if ( $user instanceof WP_User && in_array( 'administrator', (array) $user->roles, true ) ) {
 		return true;
 	}
 
-	$owned = isset( $user->caps ) && is_array( $user->caps ) ? $user->caps : array();
-	if ( ! empty( $owned['administrator'] ) ) {
-		return true;
-	}
-
-	$allcaps = isset( $user->allcaps ) && is_array( $user->allcaps ) ? $user->allcaps : array();
-	if ( ! empty( $allcaps['manage_options'] ) || ! empty( $owned['manage_options'] ) ) {
-		return true;
-	}
-
-	if ( is_multisite() && function_exists( 'get_super_admins' ) ) {
-		$supers = get_super_admins();
-		return is_array( $supers ) && in_array( $user->user_login, $supers, true );
-	}
-
-	return false;
+	return '' !== $login && in_array( $login, dgm_super_admin_logins(), true );
 }
 
 /**
