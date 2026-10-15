@@ -4,7 +4,7 @@ WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.8**.
+Current release: **1.1.9**.
 
 ## Setup
 
@@ -12,7 +12,7 @@ Current release: **1.1.8**.
 2. Network-activate **Demo Growth Memberships**.
 3. Turn demo mode on for each site that should behave as a demo. From **Network Admin > Plugins**, open **Settings** on this plugin to edit every site. On an individual site, use **Settings > Demo Growth Memberships**.
 
-Demo mode starts off. Enabling it on a site prefills the `democlient` login, opens that login on the home page for signed-out visitors, blocks outgoing email, blocks orders and payments, shows the demo banner along the bottom of the page, and keeps `democlient` on the `client` role. Other sites are unchanged.
+Demo mode starts off. Enabling it on a site prefills the `democlient` login, sends signed-out visitors to My Account, blocks outgoing email, blocks orders and payments, shows the demo banner along the bottom of every page, and keeps `democlient` on the `client` role. Other sites are unchanged.
 
 The demo password is saved for that site only. Leave the password field blank to keep the saved value. The login page includes the password in its source so the form can be prefilled, so do not reuse a password that matters anywhere else.
 
@@ -119,6 +119,11 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.9
+
+- Show the demo notice at the bottom of every front-end page.
+- Send signed-out visitors to My Account, show the demo username and password, and keep a successful login from returning to the home page.
 
 ### 1.1.8
 

@@ -337,7 +337,7 @@ function dgm_render_site_settings_page() {
 	echo '<h1>' . esc_html__( 'Demo Growth Memberships', 'demo-growth-memberships' ) . '</h1>';
 	dgm_render_settings_notice();
 	dgm_render_flash_notice();
-	echo '<p>' . esc_html__( 'These settings apply only to this site. Demo mode prefills the democlient login, shows that login on the home page for signed-out visitors, blocks outgoing email, blocks orders and payments, shows the demo banner, and keeps democlient on the client role.', 'demo-growth-memberships' ) . '</p>';
+	echo '<p>' . esc_html__( 'These settings apply only to this site. Demo mode prefills the democlient login, sends signed-out visitors to My Account, blocks outgoing email, blocks orders and payments, shows the demo banner, and keeps democlient on the client role.', 'demo-growth-memberships' ) . '</p>';
 	echo '<form method="post" action="' . esc_url( admin_url( 'options-general.php?page=dgm-settings' ) ) . '">';
 	wp_nonce_field( 'dgm_save_site_settings' );
 	echo '<input type="hidden" name="dgm_settings_action" value="site" />';

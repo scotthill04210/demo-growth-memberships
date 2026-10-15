@@ -17,9 +17,9 @@ function dgm_register_banner_hooks() {
 	add_filter( 'login_body_class', 'dgm_banner_body_class' );
 	add_action( 'wp_head', 'dgm_print_banner_css' );
 	add_action( 'login_head', 'dgm_print_banner_css' );
-	add_action( 'wp_body_open', 'dgm_render_frontend_banner' );
-	add_action( 'wp_footer', 'dgm_render_frontend_banner' );
-	add_action( 'login_footer', 'dgm_render_frontend_banner', 5 );
+	add_action( 'wp_body_open', 'dgm_render_frontend_banner', 1 );
+	add_action( 'wp_footer', 'dgm_render_frontend_banner', 99 );
+	add_action( 'login_footer', 'dgm_render_frontend_banner', 99 );
 	add_action( 'all_admin_notices', 'dgm_render_admin_banner' );
 }
 
@@ -83,7 +83,7 @@ function dgm_print_banner_css() {
 	$done = true;
 
 	echo '<style id="dgm-demo-banner-css">'
-		. '.dgm-demo-banner-front{position:fixed;z-index:100000;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:center;margin:0;padding:12px 16px;background:#1d2327;color:#fff;font-size:14px;line-height:1.4;box-sizing:border-box;text-align:center;}'
+		. '.dgm-demo-banner-front{position:fixed;z-index:2147483000;bottom:0;left:0;right:0;display:flex !important;align-items:center;justify-content:center;margin:0;padding:12px 16px;background:#1d2327;color:#fff;font-size:14px;line-height:1.4;box-sizing:border-box;text-align:center;}'
 		. '.dgm-demo-banner-front p{margin:0;text-align:center;}'
 		. 'body.dgm-has-banner{padding-bottom:52px;}'
 		. '</style>';
@@ -101,9 +101,12 @@ function dgm_render_frontend_banner() {
 
 	$done = true;
 
+	dgm_print_banner_css();
+
 	echo '<div id="dgm-demo-banner" class="dgm-demo-banner-front" role="region" aria-label="' . esc_attr__( 'Demo site notice', 'demo-growth-memberships' ) . '">';
 	echo '<p>' . esc_html( dgm_banner_message() ) . '</p>';
 	echo '</div>';
+	echo '<script id="dgm-demo-banner-place">var dgmBanner=document.getElementById("dgm-demo-banner");if(dgmBanner&&document.body&&dgmBanner.parentNode!==document.body){document.body.appendChild(dgmBanner);}</script>';
 }
 
 /**

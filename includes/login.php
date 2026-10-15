@@ -1,6 +1,6 @@
 <?php
 /**
- * Demo login on wp-login.php and a home-page pop-in for signed-out visitors.
+ * Demo login on wp-login.php, and a My Account redirect for signed-out visitors.
  *
  * @package Demo_Growth_Memberships
  */
@@ -16,13 +16,14 @@ function dgm_register_login_hooks() {
 	add_action( 'login_head', 'dgm_login_styles' );
 	add_action( 'login_form', 'dgm_login_demo_button' );
 	add_action( 'login_footer', 'dgm_login_autofill_script' );
-	add_action( 'login_init', 'dgm_prepare_demo_popin_login' );
-	add_action( 'wp_login_failed', 'dgm_redirect_failed_demo_popin_login', 10, 2 );
-	add_filter( 'login_redirect', 'dgm_redirect_demo_popin_login', 100, 3 );
-	add_action( 'wp', 'dgm_mark_demo_popin_home' );
-	add_action( 'wp_head', 'dgm_print_demo_popin_css' );
-	add_action( 'wp_body_open', 'dgm_render_demo_popin', 1 );
-	add_action( 'wp_footer', 'dgm_render_demo_popin', 1 );
+	add_action( 'template_redirect', 'dgm_redirect_logged_out_demo_visitors', 0 );
+	add_filter( 'login_redirect', 'dgm_override_home_login_redirect', 100, 3 );
+	add_filter( 'woocommerce_login_redirect', 'dgm_override_home_login_redirect', 100, 2 );
+	add_action( 'wp_head', 'dgm_print_demo_login_notice_css' );
+	add_action( 'login_head', 'dgm_print_demo_login_notice_css' );
+	add_action( 'wp_body_open', 'dgm_render_demo_login_notice', 1 );
+	add_action( 'wp_footer', 'dgm_render_demo_login_notice', 1 );
+	add_action( 'login_footer', 'dgm_render_demo_login_notice', 1 );
 }
 
 /**
@@ -101,55 +102,30 @@ function dgm_login_autofill_script() {
 	echo '<script id="dgm-login-autofill">' . $script . '</script>';
 }
 
+
 /**
- * Whether this POST came from the home-page demo login.
+ * My Account address for this site.
  *
- * @return bool
+ * @return string
  */
-function dgm_is_demo_popin_login_request() {
-	if ( ! dgm_is_demo_mode() ) {
-		return false;
+function dgm_my_account_url() {
+	if ( function_exists( 'wc_get_page_permalink' ) ) {
+		$url = wc_get_page_permalink( 'myaccount' );
+		if ( is_string( $url ) && '' !== $url ) {
+			return $url;
+		}
 	}
 
-	if ( ! isset( $_SERVER['REQUEST_METHOD'] ) || ! is_string( $_SERVER['REQUEST_METHOD'] ) || 'POST' !== strtoupper( $_SERVER['REQUEST_METHOD'] ) ) {
-		return false;
-	}
-
-	return isset( $_POST['dgm_demo_popin'] ) && is_string( $_POST['dgm_demo_popin'] ) && '1' === wp_unslash( $_POST['dgm_demo_popin'] );
+	return home_url( '/my-account/' );
 }
 
 /**
- * Remember that this request is the site home while the main query is still intact.
- */
-function dgm_mark_demo_popin_home() {
-	if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
-		return;
-	}
-
-	if ( function_exists( 'is_customize_preview' ) && is_customize_preview() ) {
-		return;
-	}
-
-	if ( function_exists( 'is_feed' ) && is_feed() ) {
-		return;
-	}
-
-	if ( dgm_request_is_site_home() ) {
-		$GLOBALS['dgm_demo_popin_home'] = true;
-	}
-}
-
-/**
- * Whether this request is the current site's home page.
+ * Whether this request is already the My Account page.
  *
  * @return bool
  */
-function dgm_request_is_site_home() {
-	if ( ! empty( $GLOBALS['dgm_demo_popin_home'] ) ) {
-		return true;
-	}
-
-	if ( function_exists( 'is_front_page' ) && is_front_page() ) {
+function dgm_request_is_my_account() {
+	if ( function_exists( 'is_account_page' ) && is_account_page() ) {
 		return true;
 	}
 
@@ -158,7 +134,26 @@ function dgm_request_is_site_home() {
 		$request = wp_unslash( $_SERVER['REQUEST_URI'] );
 	}
 
-	$path = wp_parse_url( $request, PHP_URL_PATH );
+	$path    = wp_parse_url( $request, PHP_URL_PATH );
+	$account = wp_parse_url( dgm_my_account_url(), PHP_URL_PATH );
+	$path    = is_string( $path ) ? untrailingslashit( $path ) : '';
+	$account = is_string( $account ) ? untrailingslashit( $account ) : '';
+
+	return '' !== $account && $path === $account;
+}
+
+/**
+ * Whether a URL is this site's home page.
+ *
+ * @param mixed $url URL to compare.
+ * @return bool
+ */
+function dgm_url_is_home( $url ) {
+	if ( ! is_string( $url ) || '' === $url ) {
+		return false;
+	}
+
+	$path = wp_parse_url( $url, PHP_URL_PATH );
 	$home = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
 	$path = is_string( $path ) ? untrailingslashit( $path ) : '';
 	$home = is_string( $home ) ? untrailingslashit( $home ) : '';
@@ -167,209 +162,126 @@ function dgm_request_is_site_home() {
 }
 
 /**
- * Home page for signed-out visitors while demo mode is on.
- *
- * Logged-in accounts, including Administrator and super admin, do not see it.
- *
- * @return bool
+ * Send signed-out visitors to My Account while demo mode is on.
  */
-function dgm_should_show_demo_popin() {
-	if ( ! dgm_is_demo_mode() || is_admin() || is_user_logged_in() || dgm_user_is_privileged() ) {
-		return false;
-	}
-
-	if ( function_exists( 'is_customize_preview' ) && is_customize_preview() ) {
-		return false;
-	}
-
-	return dgm_request_is_site_home();
-}
-
-/**
- * Keep the home-page demo form on the democlient account and send it back home.
- *
- * Posting to wp-login.php lets the security plugin validate its reCAPTCHA.
- */
-function dgm_prepare_demo_popin_login() {
-	if ( ! dgm_is_demo_popin_login_request() ) {
+function dgm_redirect_logged_out_demo_visitors() {
+	if ( ! dgm_is_demo_mode() || is_user_logged_in() || is_admin() ) {
 		return;
 	}
 
-	$nonce = '';
-	if ( isset( $_POST['dgm_demo_popin_nonce'] ) && is_string( $_POST['dgm_demo_popin_nonce'] ) ) {
-		$nonce = wp_unslash( $_POST['dgm_demo_popin_nonce'] );
-	}
-
-	if ( ! wp_verify_nonce( $nonce, 'dgm_demo_popin_login' ) ) {
-		wp_safe_redirect( home_url( '/' ) );
-		exit;
-	}
-
-	$_POST['log']            = 'democlient';
-	$_REQUEST['log']         = 'democlient';
-	$home                    = home_url( '/' );
-	$_POST['redirect_to']    = $home;
-	$_REQUEST['redirect_to'] = $home;
-}
-
-/**
- * After a failed home-page demo login, return to the home page with the pop-in open.
- *
- * @param string   $username Submitted username.
- * @param WP_Error $error    Login error, when WordPress provides one.
- */
-function dgm_redirect_failed_demo_popin_login( $username, $error = null ) {
-	unset( $username );
-
-	if ( ! dgm_is_demo_popin_login_request() ) {
+	if ( ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) ) {
 		return;
 	}
 
-	$code = 'failed';
-	if ( $error instanceof WP_Error ) {
-		$codes = $error->get_error_codes();
-		if ( in_array( 'captcha_error', $codes, true ) || in_array( 'invalid_captcha', $codes, true ) ) {
-			$code = 'captcha';
-		}
+	if ( function_exists( 'wp_is_json_request' ) && wp_is_json_request() ) {
+		return;
 	}
 
-	wp_safe_redirect( add_query_arg( 'dgm_login', $code, home_url( '/' ) ) );
+	if ( function_exists( 'is_feed' ) && is_feed() ) {
+		return;
+	}
+
+	if ( function_exists( 'dgm_is_login_screen' ) && dgm_is_login_screen() ) {
+		return;
+	}
+
+	if ( isset( $_SERVER['REQUEST_METHOD'] ) && is_string( $_SERVER['REQUEST_METHOD'] ) && 'GET' !== strtoupper( $_SERVER['REQUEST_METHOD'] ) ) {
+		return;
+	}
+
+	if ( dgm_request_is_my_account() ) {
+		return;
+	}
+
+	wp_safe_redirect( dgm_my_account_url() );
 	exit;
 }
 
 /**
- * Send a successful home-page demo login back to the home page.
+ * Keep a successful login from returning to the home page.
  *
- * @param string           $redirect_to           Redirect chosen so far.
- * @param string           $requested_redirect_to Redirect requested by the form.
- * @param WP_User|WP_Error $user                  Authenticated user, or an error.
+ * Administrators and super admins keep the redirect they asked for.
+ * WooCommerce passes the user as the second argument. WordPress passes it as the third.
+ *
+ * @param string           $redirect_to Redirect chosen so far.
+ * @param string|WP_User   $second       Requested redirect, or the user on WooCommerce.
+ * @param WP_User|WP_Error $user         Authenticated user, when WordPress provides one.
  * @return string
  */
-function dgm_redirect_demo_popin_login( $redirect_to, $requested_redirect_to, $user ) {
-	unset( $requested_redirect_to );
+function dgm_override_home_login_redirect( $redirect_to, $second = null, $user = null ) {
+	if ( ! $user instanceof WP_User && $second instanceof WP_User ) {
+		$user = $second;
+	}
 
-	if ( ! dgm_is_demo_popin_login_request() ) {
+	if ( ! dgm_is_demo_mode() || ! ( $user instanceof WP_User ) || dgm_user_is_privileged( $user ) ) {
 		return $redirect_to;
 	}
 
-	if ( $user instanceof WP_User && 'democlient' === $user->user_login ) {
-		return home_url( '/' );
+	if ( ! dgm_url_is_home( $redirect_to ) ) {
+		return $redirect_to;
 	}
 
-	return $redirect_to;
+	return dgm_my_account_url();
 }
 
 /**
- * Message for a demo login that returned to the home page.
+ * Whether the signed-out demo login message should show.
  *
- * @return string
+ * @return bool
  */
-function dgm_demo_popin_error_message() {
-	$code = '';
-	if ( isset( $_GET['dgm_login'] ) && is_string( $_GET['dgm_login'] ) ) {
-		$code = sanitize_key( wp_unslash( $_GET['dgm_login'] ) );
+function dgm_should_show_demo_login_notice() {
+	if ( ! dgm_is_demo_mode() || is_admin() || is_user_logged_in() || dgm_user_is_privileged() ) {
+		return false;
 	}
 
-	if ( 'captcha' === $code ) {
-		return __( 'Confirm you are not a robot, then try the demo login again.', 'demo-growth-memberships' );
+	if ( ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) ) {
+		return false;
 	}
 
-	if ( 'failed' === $code ) {
-		return __( 'The demo login could not be completed.', 'demo-growth-memberships' );
-	}
-
-	return '';
+	return true;
 }
 
 /**
- * Styles for the home-page demo login.
+ * Styles for the signed-out login message.
  */
-function dgm_print_demo_popin_css() {
+function dgm_print_demo_login_notice_css() {
 	static $done = false;
 
-	if ( $done || ! dgm_should_show_demo_popin() ) {
+	if ( $done || ! dgm_should_show_demo_login_notice() ) {
 		return;
 	}
 
 	$done = true;
 
-	echo '<style id="dgm-demo-popin-css">'
-		. '.dgm-demo-popin{position:fixed;z-index:2147483000;top:0;right:0;bottom:0;left:0;display:flex !important;align-items:center;justify-content:center;padding:24px 16px;background:rgba(0,0,0,.45);box-sizing:border-box;}'
-		. '.dgm-demo-popin[hidden],.dgm-demo-popin.is-closed{display:none !important;}'
-		. '.dgm-demo-popin-card{width:min(100%,420px);margin:0;padding:24px 20px 20px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:center;animation:dgm-popin .25s ease-out;}'
-		. '@keyframes dgm-popin{from{transform:translateY(16px);opacity:0;}to{transform:none;opacity:1;}}'
-		. '.dgm-demo-popin-card h2{margin:0 0 8px;font-size:22px;line-height:1.3;}'
-		. '.dgm-demo-popin-card p{margin:0 0 12px;}'
-		. '.dgm-demo-popin-card label{display:block;font-size:13px;font-weight:600;text-align:left;}'
-		. '.dgm-demo-popin-card input[type="text"],.dgm-demo-popin-card input[type="password"]{display:block;width:100%;margin-top:4px;padding:8px 10px;box-sizing:border-box;}'
-		. '.dgm-demo-popin-card .captcha_wrap,.dgm-demo-popin-card .wpdef_recaptcha{display:flex;justify-content:center;margin:12px 0;}'
-		. '.dgm-demo-popin-error{color:#b32d2e;font-size:14px;}'
-		. '.dgm-demo-popin-submit,.dgm-demo-popin-open{display:inline-block;margin:0;padding:10px 16px;border:0;border-radius:4px;background:#2271b1;color:#fff;font-size:14px;line-height:1.4;cursor:pointer;}'
-		. '.dgm-demo-popin-close{position:absolute;top:8px;right:8px;border:0;background:transparent;color:#1d2327;font-size:22px;line-height:1;cursor:pointer;}'
-		. '.dgm-demo-popin-card{position:relative;}'
-		. '.dgm-demo-popin-open{position:fixed;z-index:100001;right:16px;bottom:68px;}'
-		. '.dgm-demo-popin-open[hidden]{display:none;}'
+	echo '<style id="dgm-demo-login-notice-css">'
+		. '.dgm-demo-login-notice{position:fixed;z-index:2147482000;top:0;right:0;bottom:52px;left:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:rgba(0,0,0,.45);box-sizing:border-box;}'
+		. '.dgm-demo-login-notice[hidden]{display:none;}'
+		. '.dgm-demo-login-notice-card{position:relative;width:min(100%,420px);margin:0;padding:28px 24px 24px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:center;}'
+		. '.dgm-demo-login-notice-card p{margin:0 0 8px;font-size:18px;line-height:1.4;}'
+		. '.dgm-demo-login-notice-close{position:absolute;top:8px;right:8px;border:0;background:transparent;color:#1d2327;font-size:22px;line-height:1;cursor:pointer;}'
 		. '</style>';
 }
 
 /**
- * Demo client login on the home page.
- *
- * The form posts to wp-login.php so the security plugin can render and check reCAPTCHA.
+ * Tell a signed-out visitor which demo account to use.
  */
-function dgm_render_demo_popin() {
+function dgm_render_demo_login_notice() {
 	static $done = false;
 
-	if ( $done || ! dgm_should_show_demo_popin() ) {
+	if ( $done || ! dgm_should_show_demo_login_notice() ) {
 		return;
 	}
 
 	$done = true;
 
-	dgm_print_demo_popin_css();
+	dgm_print_demo_login_notice_css();
 
-	$error    = dgm_demo_popin_error_message();
-	$password = dgm_demo_password();
-
-	echo '<div id="dgm-demo-popin" class="dgm-demo-popin" role="dialog" aria-modal="true" aria-labelledby="dgm-demo-popin-title">';
-	echo '<div class="dgm-demo-popin-card">';
-	echo '<button type="button" class="dgm-demo-popin-close" aria-label="' . esc_attr__( 'Close demo login', 'demo-growth-memberships' ) . '">&times;</button>';
-	echo '<h2 id="dgm-demo-popin-title">' . esc_html__( 'Demo login', 'demo-growth-memberships' ) . '</h2>';
-	echo '<p>' . esc_html__( 'Sign in with the demo account.', 'demo-growth-memberships' ) . '</p>';
-
-	if ( '' !== $error ) {
-		echo '<p class="dgm-demo-popin-error" role="alert">' . esc_html( $error ) . '</p>';
-	}
-
-	echo '<form id="dgm-demo-popin-form" method="post" action="' . esc_url( wp_login_url() ) . '">';
-	wp_nonce_field( 'dgm_demo_popin_login', 'dgm_demo_popin_nonce' );
-	echo '<input type="hidden" name="dgm_demo_popin" value="1" />';
-	echo '<input type="hidden" name="redirect_to" value="' . esc_url( home_url( '/' ) ) . '" />';
-	echo '<p><label for="dgm-popin-user">' . esc_html__( 'Username', 'demo-growth-memberships' );
-	echo '<input type="text" name="log" id="dgm-popin-user" value="democlient" autocomplete="username" /></label></p>';
-	echo '<p><label for="dgm-popin-pass">' . esc_html__( 'Password', 'demo-growth-memberships' );
-	echo '<input type="password" name="pwd" id="dgm-popin-pass" value="' . esc_attr( $password ) . '" autocomplete="current-password" /></label></p>';
-
-	do_action( 'login_form' );
-
-	echo '<p><button type="submit" class="dgm-demo-popin-submit">' . esc_html__( 'Log in', 'demo-growth-memberships' ) . '</button></p>';
-	echo '</form></div></div>';
-
-	echo '<button type="button" id="dgm-demo-popin-open" class="dgm-demo-popin-open" hidden>' . esc_html__( 'Demo login', 'demo-growth-memberships' ) . '</button>';
-
-	$script = '(function(){'
-		. 'var popin=document.getElementById("dgm-demo-popin");'
-		. 'var opener=document.getElementById("dgm-demo-popin-open");'
-		. 'var pass=document.getElementById("dgm-popin-pass");'
-		. 'var user=document.getElementById("dgm-popin-user");'
-		. 'if(user){user.value=' . dgm_json_for_script( 'democlient' ) . ';}'
-		. 'if(pass){pass.value=' . dgm_json_for_script( $password ) . ';}'
-		. 'if(!popin){return;}'
-		. 'function setOpen(open){if(open){popin.classList.remove("is-closed");popin.removeAttribute("hidden");if(opener){opener.setAttribute("hidden","hidden");}}else{popin.classList.add("is-closed");popin.setAttribute("hidden","hidden");if(opener){opener.removeAttribute("hidden");}}}'
-		. 'popin.addEventListener("click",function(event){var close=event.target&&event.target.closest?event.target.closest(".dgm-demo-popin-close"):null;if(event.target===popin||close){setOpen(false);}});'
-		. 'if(opener){opener.addEventListener("click",function(){setOpen(true);});}'
-		. 'if(window.history&&window.history.replaceState&&window.location.search.indexOf("dgm_login=")!==-1){var url=new URL(window.location.href);url.searchParams.delete("dgm_login");window.history.replaceState({},"",url.pathname+url.search+url.hash);}'
-		. '})();';
-
-	echo '<script id="dgm-demo-popin-js">' . $script . '</script>';
+	echo '<div id="dgm-demo-login-notice" class="dgm-demo-login-notice" role="dialog" aria-modal="true" aria-labelledby="dgm-demo-login-notice-title">';
+	echo '<div class="dgm-demo-login-notice-card">';
+	echo '<button type="button" class="dgm-demo-login-notice-close" aria-label="' . esc_attr__( 'Close', 'demo-growth-memberships' ) . '">&times;</button>';
+	echo '<p id="dgm-demo-login-notice-title">' . esc_html__( 'Please Login with:', 'demo-growth-memberships' ) . '</p>';
+	echo '<p>' . esc_html__( 'username: democlient', 'demo-growth-memberships' ) . '</p>';
+	echo '<p>' . esc_html__( 'password: Alliance360', 'demo-growth-memberships' ) . '</p>';
+	echo '</div></div>';
+	echo '<script id="dgm-demo-login-notice-js">(function(){var notice=document.getElementById("dgm-demo-login-notice");if(!notice){return;}if(document.body&&notice.parentNode!==document.body){document.body.appendChild(notice);}notice.addEventListener("click",function(event){var close=event.target&&event.target.closest?event.target.closest(".dgm-demo-login-notice-close"):null;if(close){notice.setAttribute("hidden","hidden");}});})();</script>';
 }
