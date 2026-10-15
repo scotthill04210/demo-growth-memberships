@@ -1,10 +1,10 @@
 # Demo Growth Memberships
 
-WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing email, blocks orders and payments, shows a dismissible demo banner, and keeps the `democlient` user on the `client` role.
+WordPress plugin for a multisite demo. It prefills a demo login, blocks outgoing email, blocks orders and payments, shows a demo banner, and keeps the `democlient` user on the `client` role.
 
 The plugin is network-only (`Network: true`). Activate it from **Network Admin > Plugins**. It runs on every site in the network, including the demo site (site ID 3). It is not limited to that site ID.
 
-Current release: **1.1.7**.
+Current release: **1.1.8**.
 
 ## Setup
 
@@ -119,6 +119,10 @@ demo-growth-memberships/demo-growth-memberships.php
 The main file sits directly inside `demo-growth-memberships/`. There is no extra folder above it, and the archive does not contain `.git`, `.github`, `.cursor`, `node_modules`, `build`, or `.gitignore`.
 
 ## Changelog
+
+### 1.1.8
+
+- Keep the demo notice on the page. It no longer has a Dismiss control, and a previous dismissal does not hide it.
 
 ### 1.1.7
 
