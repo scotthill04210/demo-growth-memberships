@@ -20,10 +20,8 @@ function dgm_register_login_hooks() {
 	add_filter( 'login_redirect', 'dgm_override_home_login_redirect', 100, 3 );
 	add_filter( 'woocommerce_login_redirect', 'dgm_override_home_login_redirect', 100, 2 );
 	add_action( 'wp_head', 'dgm_print_demo_login_notice_css' );
-	add_action( 'login_head', 'dgm_print_demo_login_notice_css' );
 	add_action( 'wp_body_open', 'dgm_render_demo_login_notice', 1 );
 	add_action( 'wp_footer', 'dgm_render_demo_login_notice', 1 );
-	add_action( 'login_footer', 'dgm_render_demo_login_notice', 1 );
 }
 
 /**
@@ -238,7 +236,30 @@ function dgm_should_show_demo_login_notice() {
 		return false;
 	}
 
-	return true;
+	if ( dgm_is_wp_login_request() || ( function_exists( 'dgm_is_login_screen' ) && dgm_is_login_screen() ) ) {
+		return false;
+	}
+
+	return dgm_request_is_my_account_screen();
+}
+
+/**
+ * Whether this request is the My Account screen itself, not wp-login.php.
+ *
+ * @return bool
+ */
+function dgm_request_is_my_account_screen() {
+	$request = '';
+	if ( isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ) {
+		$request = wp_unslash( $_SERVER['REQUEST_URI'] );
+	}
+
+	$path    = wp_parse_url( $request, PHP_URL_PATH );
+	$account = wp_parse_url( dgm_my_account_url(), PHP_URL_PATH );
+	$path    = is_string( $path ) ? untrailingslashit( $path ) : '';
+	$account = is_string( $account ) ? untrailingslashit( $account ) : '';
+
+	return '' !== $account && $path === $account;
 }
 
 /**
