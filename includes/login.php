@@ -19,8 +19,10 @@ function dgm_register_login_hooks() {
 	add_action( 'login_init', 'dgm_prepare_demo_popin_login' );
 	add_action( 'wp_login_failed', 'dgm_redirect_failed_demo_popin_login', 10, 2 );
 	add_filter( 'login_redirect', 'dgm_redirect_demo_popin_login', 100, 3 );
+	add_action( 'wp', 'dgm_mark_demo_popin_home' );
 	add_action( 'wp_head', 'dgm_print_demo_popin_css' );
-	add_action( 'wp_footer', 'dgm_render_demo_popin', 5 );
+	add_action( 'wp_body_open', 'dgm_render_demo_popin', 1 );
+	add_action( 'wp_footer', 'dgm_render_demo_popin', 1 );
 }
 
 /**
@@ -117,6 +119,54 @@ function dgm_is_demo_popin_login_request() {
 }
 
 /**
+ * Remember that this request is the site home while the main query is still intact.
+ */
+function dgm_mark_demo_popin_home() {
+	if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+		return;
+	}
+
+	if ( function_exists( 'is_customize_preview' ) && is_customize_preview() ) {
+		return;
+	}
+
+	if ( function_exists( 'is_feed' ) && is_feed() ) {
+		return;
+	}
+
+	if ( dgm_request_is_site_home() ) {
+		$GLOBALS['dgm_demo_popin_home'] = true;
+	}
+}
+
+/**
+ * Whether this request is the current site's home page.
+ *
+ * @return bool
+ */
+function dgm_request_is_site_home() {
+	if ( ! empty( $GLOBALS['dgm_demo_popin_home'] ) ) {
+		return true;
+	}
+
+	if ( function_exists( 'is_front_page' ) && is_front_page() ) {
+		return true;
+	}
+
+	$request = '';
+	if ( isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ) {
+		$request = wp_unslash( $_SERVER['REQUEST_URI'] );
+	}
+
+	$path = wp_parse_url( $request, PHP_URL_PATH );
+	$home = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
+	$path = is_string( $path ) ? untrailingslashit( $path ) : '';
+	$home = is_string( $home ) ? untrailingslashit( $home ) : '';
+
+	return $path === $home;
+}
+
+/**
  * Home page for signed-out visitors while demo mode is on.
  *
  * Logged-in accounts, including Administrator and super admin, do not see it.
@@ -132,7 +182,7 @@ function dgm_should_show_demo_popin() {
 		return false;
 	}
 
-	return function_exists( 'is_front_page' ) && is_front_page();
+	return dgm_request_is_site_home();
 }
 
 /**
@@ -235,13 +285,17 @@ function dgm_demo_popin_error_message() {
  * Styles for the home-page demo login.
  */
 function dgm_print_demo_popin_css() {
-	if ( ! dgm_should_show_demo_popin() ) {
+	static $done = false;
+
+	if ( $done || ! dgm_should_show_demo_popin() ) {
 		return;
 	}
 
+	$done = true;
+
 	echo '<style id="dgm-demo-popin-css">'
-		. '.dgm-demo-popin{position:fixed;z-index:100001;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:rgba(0,0,0,.45);box-sizing:border-box;}'
-		. '.dgm-demo-popin[hidden],.dgm-demo-popin.is-closed{display:none;}'
+		. '.dgm-demo-popin{position:fixed;z-index:2147483000;top:0;right:0;bottom:0;left:0;display:flex !important;align-items:center;justify-content:center;padding:24px 16px;background:rgba(0,0,0,.45);box-sizing:border-box;}'
+		. '.dgm-demo-popin[hidden],.dgm-demo-popin.is-closed{display:none !important;}'
 		. '.dgm-demo-popin-card{width:min(100%,420px);margin:0;padding:24px 20px 20px;background:#fff;color:#1d2327;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box;text-align:center;animation:dgm-popin .25s ease-out;}'
 		. '@keyframes dgm-popin{from{transform:translateY(16px);opacity:0;}to{transform:none;opacity:1;}}'
 		. '.dgm-demo-popin-card h2{margin:0 0 8px;font-size:22px;line-height:1.3;}'
@@ -264,9 +318,15 @@ function dgm_print_demo_popin_css() {
  * The form posts to wp-login.php so the security plugin can render and check reCAPTCHA.
  */
 function dgm_render_demo_popin() {
-	if ( ! dgm_should_show_demo_popin() ) {
+	static $done = false;
+
+	if ( $done || ! dgm_should_show_demo_popin() ) {
 		return;
 	}
+
+	$done = true;
+
+	dgm_print_demo_popin_css();
 
 	$error    = dgm_demo_popin_error_message();
 	$password = dgm_demo_password();
