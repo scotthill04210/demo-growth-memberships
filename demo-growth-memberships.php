@@ -3,7 +3,7 @@
  * Plugin Name: Demo Growth Memberships
  * Plugin URI: https://github.com/scotthill04210/demo-growth-memberships
  * Description: Demo mode for a multisite membership site. Prefills a demo login, blocks outgoing email and orders, and can restore a per-site snapshot every night.
- * Version: 1.1.11
+ * Version: 1.1.12
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
